@@ -8,14 +8,17 @@ import (
 
 	distapp "clinic-inventory/internal/application/distributorcatalog"
 	orgapp "clinic-inventory/internal/application/organization"
+	procapp "clinic-inventory/internal/application/procurement"
 	prodapp "clinic-inventory/internal/application/productcatalog"
 	disthandler "clinic-inventory/internal/handler/distributorcatalog"
 	"clinic-inventory/internal/handler/httputil"
 	orghandler "clinic-inventory/internal/handler/organization"
+	prochandler "clinic-inventory/internal/handler/procurement"
 	prodhandler "clinic-inventory/internal/handler/productcatalog"
 	"clinic-inventory/internal/infrastructure/database"
 	distinfra "clinic-inventory/internal/infrastructure/distributorcatalog"
 	orginfra "clinic-inventory/internal/infrastructure/organization"
+	procinfra "clinic-inventory/internal/infrastructure/procurement"
 	prodinfra "clinic-inventory/internal/infrastructure/productcatalog"
 )
 
@@ -45,6 +48,8 @@ func main() {
 		&distinfra.DistributorModel{},
 		&distinfra.DistributorProductModel{},
 		&prodinfra.ClinicProductModel{},
+		&procinfra.PurchaseOrderModel{},
+		&procinfra.PurchaseOrderLineModel{},
 	); err != nil {
 		log.Fatalf("failed to migrate: %v", err)
 	}
@@ -55,6 +60,7 @@ func main() {
 	distributorRepo := distinfra.NewDistributorRepository(db)
 	distributorProductRepo := distinfra.NewDistributorProductRepository(db)
 	clinicProductRepo := prodinfra.NewClinicProductRepository(db)
+	purchaseOrderRepo := procinfra.NewPurchaseOrderRepository(db)
 
 	// ユースケース
 	createCorporation := orgapp.NewCreateCorporationUseCase(corporationRepo)
@@ -62,12 +68,14 @@ func main() {
 	createDistributor := distapp.NewCreateDistributorUseCase(distributorRepo)
 	registerDistributorProduct := distapp.NewRegisterDistributorProductUseCase(distributorProductRepo)
 	registerClinicProduct := prodapp.NewRegisterClinicProductUseCase(clinicProductRepo, distributorProductRepo)
+	createPurchaseOrder := procapp.NewCreatePurchaseOrderUseCase(purchaseOrderRepo, distributorRepo, distributorProductRepo, clinicProductRepo)
 
 	// ハンドラ
 	mux := http.NewServeMux()
 	orghandler.New(createCorporation, createFacility, facilityRepo).Register(mux)
 	disthandler.New(createDistributor, registerDistributorProduct, distributorRepo, distributorProductRepo).Register(mux)
-	prodhandler.New(registerClinicProduct, clinicProductRepo).Register(mux)
+	prodhandler.New(registerClinicProduct, clinicProductRepo, distributorProductRepo, distributorRepo).Register(mux)
+	prochandler.New(createPurchaseOrder, purchaseOrderRepo).Register(mux)
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})

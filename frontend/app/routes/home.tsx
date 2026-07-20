@@ -27,16 +27,30 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       </p>
       <ul className="divide-y rounded border">
         {facilities.map((f) => (
-          <li key={f.id}>
-            <Link
-              to={`/facilities/${f.id}/products`}
-              className="flex items-center justify-between p-4 hover:bg-gray-50"
-            >
+          <li
+            key={f.id}
+            className="flex items-center justify-between p-4 hover:bg-gray-50"
+          >
+            <div className="flex items-center gap-3">
               <span>{f.name}</span>
               <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-600">
                 {facilityTypeLabel[f.facilityType] ?? f.facilityType}
               </span>
-            </Link>
+            </div>
+            <div className="flex gap-4 text-sm">
+              <Link
+                to={`/facilities/${f.id}/products`}
+                className="text-blue-600 hover:underline"
+              >
+                商品マスタ
+              </Link>
+              <Link
+                to={`/facilities/${f.id}/orders`}
+                className="text-blue-600 hover:underline"
+              >
+                発注
+              </Link>
+            </div>
           </li>
         ))}
         {facilities.length === 0 && (

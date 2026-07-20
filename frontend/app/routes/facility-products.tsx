@@ -82,7 +82,15 @@ export default function FacilityProducts({
         <span className="mx-2 text-gray-400">/</span>
         <span>{facility.name}</span>
       </nav>
-      <h1 className="mb-6 text-2xl font-bold">商品マスタ — {facility.name}</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">商品マスタ — {facility.name}</h1>
+        <Link
+          to={`/facilities/${facility.id}/orders`}
+          className="text-sm text-blue-600 hover:underline"
+        >
+          発注へ
+        </Link>
+      </div>
 
       <div className="grid gap-8 md:grid-cols-2">
         {/* 左: 卸商品検索 */}
@@ -231,6 +239,7 @@ export default function FacilityProducts({
             <tr className="border-b bg-gray-50 text-left">
               <th className="p-2">商品コード</th>
               <th className="p-2">商品名</th>
+              <th className="p-2">卸業者</th>
               <th className="p-2">JAN</th>
               <th className="p-2 text-right">発注点</th>
             </tr>
@@ -240,13 +249,14 @@ export default function FacilityProducts({
               <tr key={p.id} className="border-b">
                 <td className="p-2 font-mono">{p.productCode}</td>
                 <td className="p-2">{p.name}</td>
+                <td className="p-2">{p.distributorName || "—"}</td>
                 <td className="p-2 font-mono">{p.janCode || "—"}</td>
                 <td className="p-2 text-right">{p.reorderPoint}</td>
               </tr>
             ))}
             {clinicProducts.length === 0 && (
               <tr>
-                <td colSpan={4} className="p-4 text-center text-gray-500">
+                <td colSpan={5} className="p-4 text-center text-gray-500">
                   まだ商品が登録されていません。
                 </td>
               </tr>

@@ -56,8 +56,23 @@ export interface ClinicProduct {
   productCode: string;
   name: string;
   distributorProductId: string;
+  distributorId: string;
+  distributorName: string;
   janCode: string;
   reorderPoint: number;
+}
+
+export interface PurchaseOrderLine {
+  clinicProductId: string;
+  quantity: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  facilityId: string;
+  distributorId: string;
+  status: "draft" | "confirmed";
+  lines: PurchaseOrderLine[];
 }
 
 export const api = {
@@ -78,6 +93,19 @@ export const api = {
     },
   ) =>
     request<ClinicProduct>(`/api/facilities/${facilityId}/products`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  listPurchaseOrders: (facilityId: string) =>
+    request<PurchaseOrder[]>(`/api/facilities/${facilityId}/orders`),
+  createPurchaseOrder: (
+    facilityId: string,
+    input: {
+      distributorId: string;
+      lines: { clinicProductId: string; quantity: number }[];
+    },
+  ) =>
+    request<PurchaseOrder>(`/api/facilities/${facilityId}/orders`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
