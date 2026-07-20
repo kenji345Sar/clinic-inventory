@@ -19,10 +19,11 @@ type DistributorProduct struct {
 	vendorName             string
 	vendorProductCode      string // 任意。ベンダーが割り当てている商品コード
 	janCode                string // 任意
+	unitPrice              int    // 標準単価（税抜・円）。その卸の定価
 	discontinued           bool
 }
 
-func NewDistributorProduct(distributorID shareddomain.ID, distributorProductCode, name, vendorName string) (*DistributorProduct, error) {
+func NewDistributorProduct(distributorID shareddomain.ID, distributorProductCode, name, vendorName string, unitPrice int) (*DistributorProduct, error) {
 	if distributorID.IsZero() {
 		return nil, errors.New("卸業者の指定は必須です")
 	}
@@ -35,12 +36,16 @@ func NewDistributorProduct(distributorID shareddomain.ID, distributorProductCode
 	if vendorName == "" {
 		return nil, errors.New("ベンダー名は必須です")
 	}
+	if unitPrice <= 0 {
+		return nil, errors.New("単価は1円以上で指定してください")
+	}
 	return &DistributorProduct{
 		id:                     shareddomain.NewID(),
 		distributorID:          distributorID,
 		distributorProductCode: distributorProductCode,
 		name:                   name,
 		vendorName:             vendorName,
+		unitPrice:              unitPrice,
 	}, nil
 }
 
@@ -51,6 +56,7 @@ func (p *DistributorProduct) Name() string                   { return p.name }
 func (p *DistributorProduct) VendorName() string             { return p.vendorName }
 func (p *DistributorProduct) VendorProductCode() string      { return p.vendorProductCode }
 func (p *DistributorProduct) JANCode() string                { return p.janCode }
+func (p *DistributorProduct) UnitPrice() int                 { return p.unitPrice }
 func (p *DistributorProduct) Discontinued() bool             { return p.discontinued }
 
 func (p *DistributorProduct) SetVendorProductCode(code string) {
@@ -72,6 +78,7 @@ func ReconstructDistributorProduct(
 	id shareddomain.ID,
 	distributorID shareddomain.ID,
 	distributorProductCode, name, vendorName, vendorProductCode, janCode string,
+	unitPrice int,
 	discontinued bool,
 ) *DistributorProduct {
 	return &DistributorProduct{
@@ -82,6 +89,7 @@ func ReconstructDistributorProduct(
 		vendorName:             vendorName,
 		vendorProductCode:      vendorProductCode,
 		janCode:                janCode,
+		unitPrice:              unitPrice,
 		discontinued:           discontinued,
 	}
 }

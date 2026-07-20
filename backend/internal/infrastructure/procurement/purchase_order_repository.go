@@ -118,6 +118,7 @@ func toPurchaseOrderLineModels(o *procdomain.PurchaseOrder) []PurchaseOrderLineM
 			PurchaseOrderID: uuid.UUID(o.ID()),
 			ClinicProductID: uuid.UUID(l.ClinicProductID()),
 			Quantity:        l.Quantity(),
+			UnitPrice:       l.UnitPrice(),
 		})
 	}
 	return models
@@ -126,7 +127,7 @@ func toPurchaseOrderLineModels(o *procdomain.PurchaseOrder) []PurchaseOrderLineM
 func toDomainPurchaseOrder(orderModel PurchaseOrderModel, lineModels []PurchaseOrderLineModel) *procdomain.PurchaseOrder {
 	lines := make([]procdomain.OrderLine, 0, len(lineModels))
 	for _, l := range lineModels {
-		lines = append(lines, procdomain.ReconstructOrderLine(shareddomain.ID(l.ClinicProductID), l.Quantity))
+		lines = append(lines, procdomain.ReconstructOrderLine(shareddomain.ID(l.ClinicProductID), l.Quantity, l.UnitPrice))
 	}
 	return procdomain.ReconstructPurchaseOrder(
 		shareddomain.ID(orderModel.ID),

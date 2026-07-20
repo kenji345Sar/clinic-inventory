@@ -80,7 +80,8 @@ func (uc *CreatePurchaseOrderUseCase) Execute(ctx context.Context, in CreatePurc
 			return nil, fmt.Errorf("クリニック商品 %s は別の卸の商品のため、この発注には含められません（1発注=1卸）: %w", clinicProduct.ProductCode(), shareddomain.ErrConflict)
 		}
 
-		if err := order.AddLine(line.ClinicProductID, line.Quantity); err != nil {
+		// 発注時点のクリニック商品単価を明細にスナップショットして固定する。
+		if err := order.AddLine(line.ClinicProductID, line.Quantity, clinicProduct.UnitPrice()); err != nil {
 			return nil, err
 		}
 	}

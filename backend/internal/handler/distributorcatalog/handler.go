@@ -82,6 +82,7 @@ type distributorProductResponse struct {
 	VendorName             string `json:"vendorName"`
 	VendorProductCode      string `json:"vendorProductCode"`
 	JANCode                string `json:"janCode"`
+	UnitPrice              int    `json:"unitPrice"`
 	Discontinued           bool   `json:"discontinued"`
 }
 
@@ -94,6 +95,7 @@ func toDistributorProductResponse(p *distdomain.DistributorProduct) distributorP
 		VendorName:             p.VendorName(),
 		VendorProductCode:      p.VendorProductCode(),
 		JANCode:                p.JANCode(),
+		UnitPrice:              p.UnitPrice(),
 		Discontinued:           p.Discontinued(),
 	}
 }
@@ -110,6 +112,7 @@ func (h *Handler) postProduct(w http.ResponseWriter, r *http.Request) {
 		VendorName             string `json:"vendorName"`
 		VendorProductCode      string `json:"vendorProductCode"`
 		JANCode                string `json:"janCode"`
+		UnitPrice              int    `json:"unitPrice"`
 	}
 	if err := httputil.DecodeJSON(r, &req); err != nil {
 		httputil.WriteError(w, err)
@@ -122,6 +125,7 @@ func (h *Handler) postProduct(w http.ResponseWriter, r *http.Request) {
 		VendorName:             req.VendorName,
 		VendorProductCode:      req.VendorProductCode,
 		JANCode:                req.JANCode,
+		UnitPrice:              req.UnitPrice,
 	})
 	if err != nil {
 		httputil.WriteError(w, err)

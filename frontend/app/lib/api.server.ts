@@ -58,6 +58,7 @@ export interface DistributorProduct {
   vendorName: string;
   vendorProductCode: string;
   janCode: string;
+  unitPrice: number;
   discontinued: boolean;
 }
 
@@ -70,12 +71,15 @@ export interface ClinicProduct {
   distributorId: string;
   distributorName: string;
   janCode: string;
+  unitPrice: number;
   reorderPoint: number;
 }
 
 export interface PurchaseOrderLine {
   clinicProductId: string;
   quantity: number;
+  unitPrice: number;
+  amount: number;
 }
 
 export interface PurchaseOrder {
@@ -84,6 +88,7 @@ export interface PurchaseOrder {
   distributorId: string;
   status: "draft" | "confirmed";
   lines: PurchaseOrderLine[];
+  totalAmount: number;
 }
 
 // 各メソッドは第1引数に accessToken を取り、backend への Bearer 認証に使う。
@@ -111,6 +116,7 @@ export const api = {
       name?: string;
       distributorProductId: string;
       janCode?: string;
+      unitPrice: number;
       reorderPoint: number;
     },
   ) =>

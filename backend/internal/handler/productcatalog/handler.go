@@ -48,6 +48,7 @@ type clinicProductResponse struct {
 	DistributorID        string `json:"distributorId"`
 	DistributorName      string `json:"distributorName"`
 	JANCode              string `json:"janCode"`
+	UnitPrice            int    `json:"unitPrice"`
 	ReorderPoint         int    `json:"reorderPoint"`
 }
 
@@ -62,6 +63,7 @@ func (h *Handler) toClinicProductResponse(ctx context.Context, p *proddomain.Cli
 		Name:                 p.Name(),
 		DistributorProductID: p.DistributorProductID().String(),
 		JANCode:              p.JANCode(),
+		UnitPrice:            p.UnitPrice(),
 		ReorderPoint:         p.ReorderPoint(),
 	}
 	distributorProduct, err := h.distributorProductRepo.FindByID(ctx, p.DistributorProductID())
@@ -88,6 +90,7 @@ func (h *Handler) postProduct(w http.ResponseWriter, r *http.Request) {
 		Name                 string `json:"name"`
 		DistributorProductID string `json:"distributorProductId"`
 		JANCode              string `json:"janCode"`
+		UnitPrice            int    `json:"unitPrice"`
 		ReorderPoint         int    `json:"reorderPoint"`
 	}
 	if err := httputil.DecodeJSON(r, &req); err != nil {
@@ -105,6 +108,7 @@ func (h *Handler) postProduct(w http.ResponseWriter, r *http.Request) {
 		Name:                 req.Name,
 		DistributorProductID: distributorProductID,
 		JANCode:              req.JANCode,
+		UnitPrice:            req.UnitPrice,
 		ReorderPoint:         req.ReorderPoint,
 	})
 	if err != nil {

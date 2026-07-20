@@ -73,6 +73,7 @@ func toDistributorProductModel(p *distdomain.DistributorProduct) DistributorProd
 		VendorName:             p.VendorName(),
 		VendorProductCode:      p.VendorProductCode(),
 		JANCode:                p.JANCode(),
+		UnitPrice:              p.UnitPrice(),
 		Discontinued:           p.Discontinued(),
 	}
 }
@@ -86,6 +87,7 @@ func toDomainDistributorProduct(model DistributorProductModel) *distdomain.Distr
 		model.VendorName,
 		model.VendorProductCode,
 		model.JANCode,
+		model.UnitPrice,
 		model.Discontinued,
 	)
 }

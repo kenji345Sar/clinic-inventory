@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { Form, Link } from "react-router";
 import type { Route } from "./+types/facility-orders";
 import { ApiError, api } from "../lib/api.server";
 import type { ClinicProduct } from "../lib/api.server";
 import { requireAuth } from "../lib/auth.server";
+import { formatYen } from "../lib/money";
 
 export function meta() {
   return [{ title: "発注 | クリニック在庫管理" }];
@@ -87,6 +89,98 @@ const statusLabel: Record<string, string> = {
   confirmed: "確定",
 };
 
+interface OrderGroup {
+  distributorId: string;
+  distributorName: string;
+  products: ClinicProduct[];
+}
+
+// 卸業者ごとの発注フォーム。数量を入れると単価から金額・小計をライブ計算して表示する。
+// 送信するのは数量のみで、単価はサーバ側でクリニック商品からスナップショットされる。
+function GroupOrderForm({
+  group,
+  message,
+}: {
+  group: OrderGroup;
+  message: { ok: boolean; error: string | null } | null;
+}) {
+  const [qty, setQty] = useState<Record<string, number>>({});
+  const subtotal = group.products.reduce(
+    (sum, p) => sum + (qty[p.id] ?? 0) * p.unitPrice,
+    0,
+  );
+
+  return (
+    <Form method="post" className="rounded border p-4">
+      <input type="hidden" name="distributorId" value={group.distributorId} />
+      <h3 className="mb-3 font-semibold">卸業者: {group.distributorName}</h3>
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-b bg-gray-50 text-left">
+            <th className="p-2">商品コード</th>
+            <th className="p-2">商品名</th>
+            <th className="p-2 text-right">単価</th>
+            <th className="p-2 text-right">発注点</th>
+            <th className="p-2 text-right">発注数量</th>
+            <th className="p-2 text-right">金額</th>
+          </tr>
+        </thead>
+        <tbody>
+          {group.products.map((p) => {
+            const q = qty[p.id] ?? 0;
+            return (
+              <tr key={p.id} className="border-b">
+                <td className="p-2 font-mono">{p.productCode}</td>
+                <td className="p-2">{p.name}</td>
+                <td className="p-2 text-right">{formatYen(p.unitPrice)}</td>
+                <td className="p-2 text-right text-gray-500">
+                  {p.reorderPoint}
+                </td>
+                <td className="p-2 text-right">
+                  <input
+                    name={`qty_${p.id}`}
+                    type="number"
+                    min={0}
+                    defaultValue={0}
+                    onChange={(e) =>
+                      setQty((prev) => ({
+                        ...prev,
+                        [p.id]: Number(e.target.value) || 0,
+                      }))
+                    }
+                    className="w-24 rounded border p-1 text-right"
+                  />
+                </td>
+                <td className="p-2 text-right">{formatYen(q * p.unitPrice)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="border-t font-semibold">
+            <td className="p-2" colSpan={5}>
+              小計
+            </td>
+            <td className="p-2 text-right">{formatYen(subtotal)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      {message && !message.ok && (
+        <p className="mt-3 text-sm text-red-600">{message.error}</p>
+      )}
+      {message?.ok && (
+        <p className="mt-3 text-sm text-green-700">発注を確定しました。</p>
+      )}
+      <button
+        type="submit"
+        className="mt-4 rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+      >
+        この卸に発注
+      </button>
+    </Form>
+  );
+}
+
 export default function FacilityOrders({
   loaderData,
   actionData,
@@ -138,64 +232,11 @@ export default function FacilityOrders({
                   ? actionData
                   : null;
               return (
-                <Form
+                <GroupOrderForm
                   key={group.distributorId || "unknown"}
-                  method="post"
-                  className="rounded border p-4"
-                >
-                  <input
-                    type="hidden"
-                    name="distributorId"
-                    value={group.distributorId}
-                  />
-                  <h3 className="mb-3 font-semibold">
-                    卸業者: {group.distributorName}
-                  </h3>
-                  <table className="w-full border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b bg-gray-50 text-left">
-                        <th className="p-2">商品コード</th>
-                        <th className="p-2">商品名</th>
-                        <th className="p-2 text-right">発注点</th>
-                        <th className="p-2 text-right">発注数量</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.products.map((p) => (
-                        <tr key={p.id} className="border-b">
-                          <td className="p-2 font-mono">{p.productCode}</td>
-                          <td className="p-2">{p.name}</td>
-                          <td className="p-2 text-right text-gray-500">
-                            {p.reorderPoint}
-                          </td>
-                          <td className="p-2 text-right">
-                            <input
-                              name={`qty_${p.id}`}
-                              type="number"
-                              min={0}
-                              defaultValue={0}
-                              className="w-24 rounded border p-1 text-right"
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {message && !message.ok && (
-                    <p className="mt-3 text-sm text-red-600">{message.error}</p>
-                  )}
-                  {message?.ok && (
-                    <p className="mt-3 text-sm text-green-700">
-                      発注を確定しました。
-                    </p>
-                  )}
-                  <button
-                    type="submit"
-                    className="mt-4 rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-                  >
-                    この卸に発注
-                  </button>
-                </Form>
+                  group={group}
+                  message={message}
+                />
               );
             })}
           </div>
@@ -231,11 +272,17 @@ export default function FacilityOrders({
                             ? `${product.productCode} ${product.name}`
                             : l.clinicProductId}
                         </span>
-                        <span className="text-gray-600">{l.quantity} 個</span>
+                        <span className="text-gray-600">
+                          {formatYen(l.unitPrice)} × {l.quantity} ={" "}
+                          {formatYen(l.amount)}
+                        </span>
                       </li>
                     );
                   })}
                 </ul>
+                <div className="mt-2 flex justify-end border-t pt-2 text-sm font-semibold">
+                  合計 {formatYen(o.totalAmount)}
+                </div>
               </li>
             ))}
           </ul>

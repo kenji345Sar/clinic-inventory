@@ -4,6 +4,7 @@ import type { Route } from "./+types/facility-products";
 import { ApiError, api } from "../lib/api.server";
 import type { DistributorProduct } from "../lib/api.server";
 import { requireAuth } from "../lib/auth.server";
+import { formatYen } from "../lib/money";
 
 export function meta() {
   return [{ title: "商品マスタ | クリニック在庫管理" }];
@@ -43,6 +44,7 @@ export async function action({ params, request }: Route.ActionArgs) {
       name: String(form.get("name") ?? ""),
       distributorProductId: String(form.get("distributorProductId") ?? ""),
       janCode: String(form.get("janCode") ?? ""),
+      unitPrice: Number(form.get("unitPrice") ?? 0),
       reorderPoint: Number(form.get("reorderPoint") ?? 0),
     });
     return { ok: true as const, error: null };
@@ -140,6 +142,9 @@ export default function FacilityProducts({
                       }`}
                     >
                       <span className="font-medium">{p.name}</span>
+                      <span className="ml-2 text-sm text-gray-700">
+                        {formatYen(p.unitPrice)}
+                      </span>
                       {p.discontinued && (
                         <span className="ml-2 text-xs text-red-600">廃盤</span>
                       )}
@@ -167,7 +172,11 @@ export default function FacilityProducts({
             2. クリニック商品として登録
           </h2>
           {selected ? (
-            <Form method="post" className="space-y-3 rounded border p-4">
+            <Form
+              key={selected.id}
+              method="post"
+              className="space-y-3 rounded border p-4"
+            >
               <input
                 type="hidden"
                 name="distributorProductId"
@@ -200,6 +209,17 @@ export default function FacilityProducts({
                   name="janCode"
                   className="mt-1 block w-full rounded border p-2"
                   placeholder={selected.janCode || "なし"}
+                />
+              </label>
+              <label className="block text-sm text-gray-600">
+                単価（税抜・円。初期値は卸商品の標準単価。医院別単価があれば変更）
+                <input
+                  name="unitPrice"
+                  type="number"
+                  min={1}
+                  defaultValue={selected.unitPrice}
+                  required
+                  className="mt-1 block w-full rounded border p-2"
                 />
               </label>
               <label className="block text-sm text-gray-600">
@@ -244,6 +264,7 @@ export default function FacilityProducts({
               <th className="p-2">商品名</th>
               <th className="p-2">卸業者</th>
               <th className="p-2">JAN</th>
+              <th className="p-2 text-right">単価</th>
               <th className="p-2 text-right">発注点</th>
             </tr>
           </thead>
@@ -254,12 +275,13 @@ export default function FacilityProducts({
                 <td className="p-2">{p.name}</td>
                 <td className="p-2">{p.distributorName || "—"}</td>
                 <td className="p-2 font-mono">{p.janCode || "—"}</td>
+                <td className="p-2 text-right">{formatYen(p.unitPrice)}</td>
                 <td className="p-2 text-right">{p.reorderPoint}</td>
               </tr>
             ))}
             {clinicProducts.length === 0 && (
               <tr>
-                <td colSpan={5} className="p-4 text-center text-gray-500">
+                <td colSpan={6} className="p-4 text-center text-gray-500">
                   まだ商品が登録されていません。
                 </td>
               </tr>

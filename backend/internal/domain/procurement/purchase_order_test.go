@@ -53,7 +53,7 @@ func TestPurchaseOrder_AddLine(t *testing.T) {
 	t.Run("明細を追加できる", func(t *testing.T) {
 		o := newOrder(t)
 		productID := shareddomain.NewID()
-		if err := o.AddLine(productID, 5); err != nil {
+		if err := o.AddLine(productID, 5, 1000); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		lines := o.Lines()
@@ -68,10 +68,10 @@ func TestPurchaseOrder_AddLine(t *testing.T) {
 	t.Run("同一商品を追加すると数量が加算され明細は増えない", func(t *testing.T) {
 		o := newOrder(t)
 		productID := shareddomain.NewID()
-		if err := o.AddLine(productID, 5); err != nil {
+		if err := o.AddLine(productID, 5, 1000); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if err := o.AddLine(productID, 3); err != nil {
+		if err := o.AddLine(productID, 3, 1000); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		lines := o.Lines()
@@ -85,31 +85,69 @@ func TestPurchaseOrder_AddLine(t *testing.T) {
 
 	t.Run("数量0以下はエラー", func(t *testing.T) {
 		o := newOrder(t)
-		if err := o.AddLine(shareddomain.NewID(), 0); err == nil {
+		if err := o.AddLine(shareddomain.NewID(), 0, 1000); err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		if err := o.AddLine(shareddomain.NewID(), -1); err == nil {
+		if err := o.AddLine(shareddomain.NewID(), -1, 1000); err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("単価0以下はエラー", func(t *testing.T) {
+		o := newOrder(t)
+		if err := o.AddLine(shareddomain.NewID(), 5, 0); err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if err := o.AddLine(shareddomain.NewID(), 5, -1); err == nil {
 			t.Fatal("expected error, got nil")
 		}
 	})
 
 	t.Run("クリニック商品IDが未指定だとエラー", func(t *testing.T) {
 		o := newOrder(t)
-		if err := o.AddLine(shareddomain.ID{}, 5); err == nil {
+		if err := o.AddLine(shareddomain.ID{}, 5, 1000); err == nil {
 			t.Fatal("expected error, got nil")
 		}
 	})
 
 	t.Run("確定後は明細を追加できない", func(t *testing.T) {
 		o := newOrder(t)
-		if err := o.AddLine(shareddomain.NewID(), 5); err != nil {
+		if err := o.AddLine(shareddomain.NewID(), 5, 1000); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if err := o.Confirm(); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if err := o.AddLine(shareddomain.NewID(), 1); err == nil {
+		if err := o.AddLine(shareddomain.NewID(), 1, 1000); err == nil {
 			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
+func TestPurchaseOrder_Amount(t *testing.T) {
+	facilityID := shareddomain.NewID()
+	distributorID := shareddomain.NewID()
+
+	t.Run("明細金額と発注合計が数量×単価で計算される", func(t *testing.T) {
+		o, err := procdomain.NewPurchaseOrder(facilityID, distributorID)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := o.AddLine(shareddomain.NewID(), 3, 1200); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := o.AddLine(shareddomain.NewID(), 2, 500); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		lines := o.Lines()
+		if lines[0].Amount() != 3600 {
+			t.Errorf("明細1 Amount() = %d, want 3600", lines[0].Amount())
+		}
+		if lines[1].Amount() != 1000 {
+			t.Errorf("明細2 Amount() = %d, want 1000", lines[1].Amount())
+		}
+		if o.TotalAmount() != 4600 {
+			t.Errorf("TotalAmount() = %d, want 4600", o.TotalAmount())
 		}
 	})
 }
@@ -123,7 +161,7 @@ func TestPurchaseOrder_Confirm(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if err := o.AddLine(shareddomain.NewID(), 5); err != nil {
+		if err := o.AddLine(shareddomain.NewID(), 5, 1000); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if err := o.Confirm(); err != nil {
@@ -149,7 +187,7 @@ func TestPurchaseOrder_Confirm(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if err := o.AddLine(shareddomain.NewID(), 5); err != nil {
+		if err := o.AddLine(shareddomain.NewID(), 5, 1000); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if err := o.Confirm(); err != nil {

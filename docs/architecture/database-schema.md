@@ -49,6 +49,7 @@ erDiagram
         text vendor_name
         text vendor_product_code "null可"
         text jan_code "null可, idx"
+        bigint unit_price "標準単価 税抜円"
         boolean discontinued "default false"
     }
     clinic_products {
@@ -58,6 +59,7 @@ erDiagram
         text name
         uuid distributor_product_id "idx"
         text jan_code "null可, idx"
+        bigint unit_price "仕入単価 税抜円"
         bigint reorder_point "default 0"
     }
     purchase_orders {
@@ -71,6 +73,7 @@ erDiagram
         uuid purchase_order_id "idx"
         uuid clinic_product_id "idx"
         bigint quantity
+        bigint unit_price "発注時スナップショット 税抜円"
     }
 ```
 
@@ -111,6 +114,7 @@ erDiagram
 | vendor_name | text | NO | | メーカー名 |
 | vendor_product_code | text | YES | | 任意 |
 | jan_code | text | YES | | 任意, index |
+| unit_price | bigint | NO | 0 | 標準単価（税抜・円）。その卸の定価 |
 | discontinued | boolean | NO | false | 廃盤フラグ（物理削除しない） |
 
 ### clinic_products（クリニック商品）
@@ -122,6 +126,7 @@ erDiagram
 | name | text | NO | | |
 | distributor_product_id | uuid | NO | | index。元になる卸商品への紐付け（必須） |
 | jan_code | text | YES | | 任意, index。バーコード消費の引き当てに使用 |
+| unit_price | bigint | NO | 0 | 仕入単価（税抜・円）。卸の標準単価をデフォルト、医院別単価で上書き可 |
 | reorder_point | bigint | NO | 0 | 発注点 |
 
 ### purchase_orders（発注・親）
@@ -139,6 +144,7 @@ erDiagram
 | purchase_order_id | uuid | NO | | index。親発注への紐付け |
 | clinic_product_id | uuid | NO | | index |
 | quantity | bigint | NO | | 数量（1以上、集約で担保） |
+| unit_price | bigint | NO | 0 | 発注時点の単価スナップショット（税抜・円）。マスタ単価が変わっても過去発注は不変 |
 
 ---
 

@@ -21,6 +21,7 @@ type PurchaseOrderLineModel struct {
 	PurchaseOrderID uuid.UUID `gorm:"type:uuid;not null;index"`
 	ClinicProductID uuid.UUID `gorm:"type:uuid;not null;index"`
 	Quantity        int       `gorm:"not null"`
+	UnitPrice       int       `gorm:"not null;default:0"` // 発注時点の単価スナップショット（税抜・円）
 }
 
 func (PurchaseOrderLineModel) TableName() string { return "purchase_order_lines" }

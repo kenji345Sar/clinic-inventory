@@ -33,6 +33,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 type orderLineResponse struct {
 	ClinicProductID string `json:"clinicProductId"`
 	Quantity        int    `json:"quantity"`
+	UnitPrice       int    `json:"unitPrice"`
+	Amount          int    `json:"amount"`
 }
 
 type purchaseOrderResponse struct {
@@ -41,6 +43,7 @@ type purchaseOrderResponse struct {
 	DistributorID string              `json:"distributorId"`
 	Status        string              `json:"status"`
 	Lines         []orderLineResponse `json:"lines"`
+	TotalAmount   int                 `json:"totalAmount"`
 }
 
 func toPurchaseOrderResponse(o *procdomain.PurchaseOrder) purchaseOrderResponse {
@@ -49,6 +52,8 @@ func toPurchaseOrderResponse(o *procdomain.PurchaseOrder) purchaseOrderResponse 
 		lines = append(lines, orderLineResponse{
 			ClinicProductID: l.ClinicProductID().String(),
 			Quantity:        l.Quantity(),
+			UnitPrice:       l.UnitPrice(),
+			Amount:          l.Amount(),
 		})
 	}
 	return purchaseOrderResponse{
@@ -57,6 +62,7 @@ func toPurchaseOrderResponse(o *procdomain.PurchaseOrder) purchaseOrderResponse 
 		DistributorID: o.DistributorID().String(),
 		Status:        string(o.Status()),
 		Lines:         lines,
+		TotalAmount:   o.TotalAmount(),
 	}
 }
 

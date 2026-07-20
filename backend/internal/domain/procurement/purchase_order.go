@@ -15,16 +15,21 @@ const (
 )
 
 // OrderLine は発注明細。発注集約の内部に属する値オブジェクト。
-// 「どのクリニック商品を何個」だけを持つ。
-// 発注書に必要な卸商品コード・商品名は、PDF生成時にクリニック商品経由で引き当てる想定で、
-// この段階では明細に持たせない。
+// 「どのクリニック商品を何個、いくらで」を持つ。
+// 単価(unitPrice)は発注作成時のクリニック商品の単価をスナップショットした値。
+// マスタ単価が後で変わっても、確定済み発注の金額は変わらないようにするため明細に固定で持つ。
 type OrderLine struct {
 	clinicProductID shareddomain.ID
 	quantity        int
+	unitPrice       int // 発注時点の単価（税抜・円）のスナップショット
 }
 
 func (l OrderLine) ClinicProductID() shareddomain.ID { return l.clinicProductID }
 func (l OrderLine) Quantity() int                    { return l.quantity }
+func (l OrderLine) UnitPrice() int                   { return l.unitPrice }
+
+// Amount は明細金額（数量 × 単価、税抜・円）。
+func (l OrderLine) Amount() int { return l.quantity * l.unitPrice }
 
 // PurchaseOrder（発注）。発注コンテキストの集約ルート。
 //
@@ -58,7 +63,8 @@ func NewPurchaseOrder(facilityID, distributorID shareddomain.ID) (*PurchaseOrder
 
 // AddLine は下書き中の発注に明細を追加する。
 // 同じクリニック商品が既にあれば数量を加算し、重複明細を作らない。
-func (o *PurchaseOrder) AddLine(clinicProductID shareddomain.ID, quantity int) error {
+// unitPrice は発注時点のクリニック商品単価をスナップショットした値。
+func (o *PurchaseOrder) AddLine(clinicProductID shareddomain.ID, quantity, unitPrice int) error {
 	if o.status != StatusDraft {
 		return errors.New("確定済みの発注には明細を追加できません")
 	}
@@ -68,13 +74,16 @@ func (o *PurchaseOrder) AddLine(clinicProductID shareddomain.ID, quantity int) e
 	if quantity <= 0 {
 		return errors.New("数量は1以上で指定してください")
 	}
+	if unitPrice <= 0 {
+		return errors.New("単価は1円以上で指定してください")
+	}
 	for i := range o.lines {
 		if o.lines[i].clinicProductID == clinicProductID {
 			o.lines[i].quantity += quantity
 			return nil
 		}
 	}
-	o.lines = append(o.lines, OrderLine{clinicProductID: clinicProductID, quantity: quantity})
+	o.lines = append(o.lines, OrderLine{clinicProductID: clinicProductID, quantity: quantity, unitPrice: unitPrice})
 	return nil
 }
 
@@ -102,6 +111,15 @@ func (o *PurchaseOrder) Lines() []OrderLine {
 	return out
 }
 
+// TotalAmount は発注の合計金額（明細金額の総和、税抜・円）。
+func (o *PurchaseOrder) TotalAmount() int {
+	total := 0
+	for _, l := range o.lines {
+		total += l.Amount()
+	}
+	return total
+}
+
 // ReconstructPurchaseOrder は永続化データから発注を復元する。バリデーションは行わない。
 func ReconstructPurchaseOrder(
 	id, facilityID, distributorID shareddomain.ID,
@@ -118,6 +136,6 @@ func ReconstructPurchaseOrder(
 }
 
 // ReconstructOrderLine は永続化データから明細を復元する。
-func ReconstructOrderLine(clinicProductID shareddomain.ID, quantity int) OrderLine {
-	return OrderLine{clinicProductID: clinicProductID, quantity: quantity}
+func ReconstructOrderLine(clinicProductID shareddomain.ID, quantity, unitPrice int) OrderLine {
+	return OrderLine{clinicProductID: clinicProductID, quantity: quantity, unitPrice: unitPrice}
 }

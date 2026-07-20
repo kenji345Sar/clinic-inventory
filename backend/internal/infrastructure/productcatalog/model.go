@@ -12,6 +12,7 @@ type ClinicProductModel struct {
 	Name                 string    `gorm:"not null"`
 	DistributorProductID uuid.UUID `gorm:"type:uuid;not null;index"`
 	JANCode              string    `gorm:"column:jan_code;index"`
+	UnitPrice            int       `gorm:"not null;default:0"` // 仕入単価（税抜・円）
 	ReorderPoint         int       `gorm:"not null;default:0"`
 }
 

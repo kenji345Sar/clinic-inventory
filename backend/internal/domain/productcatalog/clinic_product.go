@@ -21,10 +21,11 @@ type ClinicProduct struct {
 	name                 string
 	distributorProductID shareddomain.ID
 	janCode              string // 任意。JANが無い商品は名称等で検索する運用
+	unitPrice            int    // 仕入単価（税抜・円）。卸商品の標準単価をデフォルトに、医院別単価があれば上書き
 	reorderPoint         int
 }
 
-func NewClinicProduct(facilityID shareddomain.ID, productCode, name string, distributorProductID shareddomain.ID, reorderPoint int) (*ClinicProduct, error) {
+func NewClinicProduct(facilityID shareddomain.ID, productCode, name string, distributorProductID shareddomain.ID, unitPrice, reorderPoint int) (*ClinicProduct, error) {
 	if facilityID.IsZero() {
 		return nil, errors.New("クリニックの指定は必須です")
 	}
@@ -37,6 +38,9 @@ func NewClinicProduct(facilityID shareddomain.ID, productCode, name string, dist
 	if distributorProductID.IsZero() {
 		return nil, errors.New("卸商品への紐付けは必須です")
 	}
+	if unitPrice <= 0 {
+		return nil, errors.New("単価は1円以上で指定してください")
+	}
 	if reorderPoint < 0 {
 		return nil, errors.New("発注点は0以上で指定してください")
 	}
@@ -46,6 +50,7 @@ func NewClinicProduct(facilityID shareddomain.ID, productCode, name string, dist
 		productCode:          productCode,
 		name:                 name,
 		distributorProductID: distributorProductID,
+		unitPrice:            unitPrice,
 		reorderPoint:         reorderPoint,
 	}, nil
 }
@@ -56,10 +61,20 @@ func (p *ClinicProduct) ProductCode() string                   { return p.produc
 func (p *ClinicProduct) Name() string                          { return p.name }
 func (p *ClinicProduct) DistributorProductID() shareddomain.ID { return p.distributorProductID }
 func (p *ClinicProduct) JANCode() string                       { return p.janCode }
+func (p *ClinicProduct) UnitPrice() int                        { return p.unitPrice }
 func (p *ClinicProduct) ReorderPoint() int                     { return p.reorderPoint }
 
 func (p *ClinicProduct) SetJANCode(code string) {
 	p.janCode = code
+}
+
+// ChangeUnitPrice は仕入単価を変更する（医院別単価の設定・更新）。
+func (p *ClinicProduct) ChangeUnitPrice(unitPrice int) error {
+	if unitPrice <= 0 {
+		return errors.New("単価は1円以上で指定してください")
+	}
+	p.unitPrice = unitPrice
+	return nil
 }
 
 // ChangeReorderPoint は発注点を変更する。
@@ -78,6 +93,7 @@ func ReconstructClinicProduct(
 	productCode, name string,
 	distributorProductID shareddomain.ID,
 	janCode string,
+	unitPrice int,
 	reorderPoint int,
 ) *ClinicProduct {
 	return &ClinicProduct{
@@ -87,6 +103,7 @@ func ReconstructClinicProduct(
 		name:                 name,
 		distributorProductID: distributorProductID,
 		janCode:              janCode,
+		unitPrice:            unitPrice,
 		reorderPoint:         reorderPoint,
 	}
 }

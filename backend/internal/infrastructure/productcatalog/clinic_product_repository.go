@@ -86,6 +86,7 @@ func toClinicProductModel(p *proddomain.ClinicProduct) ClinicProductModel {
 		Name:                 p.Name(),
 		DistributorProductID: uuid.UUID(p.DistributorProductID()),
 		JANCode:              p.JANCode(),
+		UnitPrice:            p.UnitPrice(),
 		ReorderPoint:         p.ReorderPoint(),
 	}
 }
@@ -98,6 +99,7 @@ func toDomainClinicProduct(model ClinicProductModel) *proddomain.ClinicProduct {
 		model.Name,
 		shareddomain.ID(model.DistributorProductID),
 		model.JANCode,
+		model.UnitPrice,
 		model.ReorderPoint,
 	)
 }

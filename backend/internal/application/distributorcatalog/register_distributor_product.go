@@ -23,6 +23,7 @@ type RegisterDistributorProductInput struct {
 	VendorName             string
 	VendorProductCode      string // 任意
 	JANCode                string // 任意
+	UnitPrice              int    // 標準単価（税抜・円・必須）
 }
 
 func (uc *RegisterDistributorProductUseCase) Execute(ctx context.Context, in RegisterDistributorProductInput) (*distdomain.DistributorProduct, error) {
@@ -36,7 +37,7 @@ func (uc *RegisterDistributorProductUseCase) Execute(ctx context.Context, in Reg
 		return nil, fmt.Errorf("卸商品コード %s はこの卸業者で既に使われています: %w", in.DistributorProductCode, shareddomain.ErrConflict)
 	}
 
-	product, err := distdomain.NewDistributorProduct(in.DistributorID, in.DistributorProductCode, in.Name, in.VendorName)
+	product, err := distdomain.NewDistributorProduct(in.DistributorID, in.DistributorProductCode, in.Name, in.VendorName, in.UnitPrice)
 	if err != nil {
 		return nil, err
 	}

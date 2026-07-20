@@ -33,6 +33,7 @@ type RegisterClinicProductInput struct {
 	Name                 string // 空なら卸商品の商品名を引き継ぐ
 	DistributorProductID shareddomain.ID
 	JANCode              string // 空なら卸商品のJANを引き継ぐ
+	UnitPrice            int    // 0なら卸商品の標準単価を引き継ぐ。指定があれば医院別単価として上書き
 	ReorderPoint         int
 }
 
@@ -60,7 +61,13 @@ func (uc *RegisterClinicProductUseCase) Execute(ctx context.Context, in Register
 		name = distributorProduct.Name()
 	}
 
-	product, err := proddomain.NewClinicProduct(in.FacilityID, in.ProductCode, name, in.DistributorProductID, in.ReorderPoint)
+	// 単価は未指定(0)なら卸商品の標準単価を継承。指定があれば医院別単価として上書き。
+	unitPrice := in.UnitPrice
+	if unitPrice == 0 {
+		unitPrice = distributorProduct.UnitPrice()
+	}
+
+	product, err := proddomain.NewClinicProduct(in.FacilityID, in.ProductCode, name, in.DistributorProductID, unitPrice, in.ReorderPoint)
 	if err != nil {
 		return nil, err
 	}

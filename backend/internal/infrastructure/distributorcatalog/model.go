@@ -21,6 +21,7 @@ type DistributorProductModel struct {
 	VendorName             string    `gorm:"not null"`
 	VendorProductCode      string
 	JANCode                string `gorm:"column:jan_code;index"`
+	UnitPrice              int    `gorm:"not null;default:0"` // 標準単価（税抜・円）
 	Discontinued           bool   `gorm:"not null;default:false"`
 }
 
