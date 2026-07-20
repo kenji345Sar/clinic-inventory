@@ -12,10 +12,21 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(
+  path: string,
+  accessToken: string,
+  init?: RequestInit,
+): Promise<T> {
+  const authHeader: Record<string, string> = accessToken
+    ? { Authorization: `Bearer ${accessToken}` }
+    : {};
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeader,
+      ...init?.headers,
+    },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as {
@@ -75,14 +86,25 @@ export interface PurchaseOrder {
   lines: PurchaseOrderLine[];
 }
 
+// 各メソッドは第1引数に accessToken を取り、backend への Bearer 認証に使う。
+// トークンは loader/action が requireAuth() で取得して渡す（AUTH_DISABLED 時は空文字）。
 export const api = {
-  listFacilities: () => request<Facility[]>("/api/facilities"),
-  listDistributors: () => request<Distributor[]>("/api/distributors"),
-  listDistributorProducts: (distributorId: string) =>
-    request<DistributorProduct[]>(`/api/distributors/${distributorId}/products`),
-  listClinicProducts: (facilityId: string) =>
-    request<ClinicProduct[]>(`/api/facilities/${facilityId}/products`),
+  listFacilities: (accessToken: string) =>
+    request<Facility[]>("/api/facilities", accessToken),
+  listDistributors: (accessToken: string) =>
+    request<Distributor[]>("/api/distributors", accessToken),
+  listDistributorProducts: (accessToken: string, distributorId: string) =>
+    request<DistributorProduct[]>(
+      `/api/distributors/${distributorId}/products`,
+      accessToken,
+    ),
+  listClinicProducts: (accessToken: string, facilityId: string) =>
+    request<ClinicProduct[]>(
+      `/api/facilities/${facilityId}/products`,
+      accessToken,
+    ),
   registerClinicProduct: (
+    accessToken: string,
     facilityId: string,
     input: {
       productCode: string;
@@ -92,20 +114,21 @@ export const api = {
       reorderPoint: number;
     },
   ) =>
-    request<ClinicProduct>(`/api/facilities/${facilityId}/products`, {
+    request<ClinicProduct>(`/api/facilities/${facilityId}/products`, accessToken, {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  listPurchaseOrders: (facilityId: string) =>
-    request<PurchaseOrder[]>(`/api/facilities/${facilityId}/orders`),
+  listPurchaseOrders: (accessToken: string, facilityId: string) =>
+    request<PurchaseOrder[]>(`/api/facilities/${facilityId}/orders`, accessToken),
   createPurchaseOrder: (
+    accessToken: string,
     facilityId: string,
     input: {
       distributorId: string;
       lines: { clinicProductId: string; quantity: number }[];
     },
   ) =>
-    request<PurchaseOrder>(`/api/facilities/${facilityId}/orders`, {
+    request<PurchaseOrder>(`/api/facilities/${facilityId}/orders`, accessToken, {
       method: "POST",
       body: JSON.stringify(input),
     }),

@@ -70,20 +70,25 @@ func main() {
 	registerClinicProduct := prodapp.NewRegisterClinicProductUseCase(clinicProductRepo, distributorProductRepo)
 	createPurchaseOrder := procapp.NewCreatePurchaseOrderUseCase(purchaseOrderRepo, distributorRepo, distributorProductRepo, clinicProductRepo)
 
-	// ハンドラ
-	mux := http.NewServeMux()
-	orghandler.New(createCorporation, createFacility, facilityRepo).Register(mux)
-	disthandler.New(createDistributor, registerDistributorProduct, distributorRepo, distributorProductRepo).Register(mux)
-	prodhandler.New(registerClinicProduct, clinicProductRepo, distributorProductRepo, distributorRepo).Register(mux)
-	prochandler.New(createPurchaseOrder, purchaseOrderRepo).Register(mux)
+	// 認証が必要な業務APIハンドラ
+	protected := http.NewServeMux()
+	orghandler.New(createCorporation, createFacility, facilityRepo).Register(protected)
+	disthandler.New(createDistributor, registerDistributorProduct, distributorRepo, distributorProductRepo).Register(protected)
+	prodhandler.New(registerClinicProduct, clinicProductRepo, distributorProductRepo, distributorRepo).Register(protected)
+	prochandler.New(createPurchaseOrder, purchaseOrderRepo).Register(protected)
 
-	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+	// ルーティング。health は認証不要、それ以外の /api/* は RequireAuth を通す。
+	// Go 1.22 の ServeMux は "GET /api/health" を "/api/" より具体的として優先するため、
+	// health だけ素通しし、残りの業務APIは protected(認証必須)へ委譲される。
+	root := http.NewServeMux()
+	root.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	root.Handle("/api/", httputil.RequireAuth(protected))
 
 	addr := ":" + port()
 	fmt.Printf("clinic-inventory api listening on %s\n", addr)
-	if err := http.ListenAndServe(addr, httputil.CORS(mux)); err != nil {
+	if err := http.ListenAndServe(addr, httputil.CORS(root)); err != nil {
 		log.Fatalf("server stopped: %v", err)
 	}
 }

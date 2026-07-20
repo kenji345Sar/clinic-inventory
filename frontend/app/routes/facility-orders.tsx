@@ -2,6 +2,7 @@ import { Form, Link } from "react-router";
 import type { Route } from "./+types/facility-orders";
 import { ApiError, api } from "../lib/api.server";
 import type { ClinicProduct } from "../lib/api.server";
+import { requireAuth } from "../lib/auth.server";
 
 export function meta() {
   return [{ title: "発注 | クリニック在庫管理" }];
@@ -9,11 +10,12 @@ export function meta() {
 
 // 発注画面。登録済みクリニック商品を卸業者ごとにまとめて表示し、
 // 卸単位で数量を入れて発注する。「1発注 = 1卸」なので発注フォームも卸ごとに分ける。
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ params, request }: Route.LoaderArgs) {
+  const { accessToken } = await requireAuth(request);
   const [facilities, clinicProducts, orders] = await Promise.all([
-    api.listFacilities(),
-    api.listClinicProducts(params.facilityId),
-    api.listPurchaseOrders(params.facilityId),
+    api.listFacilities(accessToken),
+    api.listClinicProducts(accessToken, params.facilityId),
+    api.listPurchaseOrders(accessToken, params.facilityId),
   ]);
   const facility = facilities.find((f) => f.id === params.facilityId);
   if (!facility) {
@@ -44,6 +46,7 @@ export async function loader({ params }: Route.LoaderArgs) {
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
+  const { accessToken } = await requireAuth(request);
   const form = await request.formData();
   const distributorId = String(form.get("distributorId") ?? "");
 
@@ -66,7 +69,7 @@ export async function action({ params, request }: Route.ActionArgs) {
   }
 
   try {
-    const order = await api.createPurchaseOrder(params.facilityId, {
+    const order = await api.createPurchaseOrder(accessToken, params.facilityId, {
       distributorId,
       lines,
     });

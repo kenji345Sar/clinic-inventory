@@ -1,14 +1,16 @@
 import { Link } from "react-router";
 import type { Route } from "./+types/home";
 import { api } from "../lib/api.server";
+import { requireAuth } from "../lib/auth.server";
 
 export function meta() {
   return [{ title: "クリニック在庫管理" }];
 }
 
-export async function loader() {
-  const facilities = await api.listFacilities();
-  return { facilities };
+export async function loader({ request }: Route.LoaderArgs) {
+  const { accessToken, user } = await requireAuth(request);
+  const facilities = await api.listFacilities(accessToken);
+  return { facilities, user };
 }
 
 const facilityTypeLabel: Record<string, string> = {
@@ -18,10 +20,18 @@ const facilityTypeLabel: Record<string, string> = {
 };
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { facilities } = loaderData;
+  const { facilities, user } = loaderData;
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-2 text-2xl font-bold">クリニック在庫管理</h1>
+      <div className="mb-2 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">クリニック在庫管理</h1>
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-gray-600">{user.email ?? user.sub}</span>
+          <a href="/logout" className="text-blue-600 hover:underline">
+            ログアウト
+          </a>
+        </div>
+      </div>
       <p className="mb-6 text-sm text-gray-600">
         クリニックを選択してください。
       </p>

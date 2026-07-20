@@ -3,6 +3,7 @@ import { Form, Link, useSearchParams } from "react-router";
 import type { Route } from "./+types/facility-products";
 import { ApiError, api } from "../lib/api.server";
 import type { DistributorProduct } from "../lib/api.server";
+import { requireAuth } from "../lib/auth.server";
 
 export function meta() {
   return [{ title: "商品マスタ | クリニック在庫管理" }];
@@ -12,13 +13,14 @@ export function meta() {
 // 卸商品の検索はMVPでは「選択した卸の全商品を取得してクライアント側で絞り込み」
 // （卸1社あたり数千件想定。件数が問題になったらサーバーサイド検索に切り替える）。
 export async function loader({ params, request }: Route.LoaderArgs) {
+  const { accessToken } = await requireAuth(request);
   const url = new URL(request.url);
   const distributorId = url.searchParams.get("distributor") ?? "";
 
   const [facilities, clinicProducts, distributors] = await Promise.all([
-    api.listFacilities(),
-    api.listClinicProducts(params.facilityId),
-    api.listDistributors(),
+    api.listFacilities(accessToken),
+    api.listClinicProducts(accessToken, params.facilityId),
+    api.listDistributors(accessToken),
   ]);
   const facility = facilities.find((f) => f.id === params.facilityId);
   if (!facility) {
@@ -26,16 +28,17 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   const distributorProducts = distributorId
-    ? await api.listDistributorProducts(distributorId)
+    ? await api.listDistributorProducts(accessToken, distributorId)
     : [];
 
   return { facility, clinicProducts, distributors, distributorId, distributorProducts };
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
+  const { accessToken } = await requireAuth(request);
   const form = await request.formData();
   try {
-    await api.registerClinicProduct(params.facilityId, {
+    await api.registerClinicProduct(accessToken, params.facilityId, {
       productCode: String(form.get("productCode") ?? ""),
       name: String(form.get("name") ?? ""),
       distributorProductId: String(form.get("distributorProductId") ?? ""),
