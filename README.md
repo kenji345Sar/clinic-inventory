@@ -10,18 +10,31 @@ Goの構文に慣れていない場合は [docs/go/go-for-csharp.md](docs/go/go-
 - Node.js 22（nvm推奨。`frontend/.nvmrc` あり）
 - PostgreSQL 16（Homebrew: `brew services start postgresql@16`）
 
+## 初回セットアップ
+
+```bash
+# DB作成（psql系コマンドは export PATH="/usr/local/opt/postgresql@16/bin:$PATH" で通す）
+createdb -h localhost -U "$(whoami)" clinic_inventory
+
+# 環境変数ファイルを用意（実値は .env に記入。どちらも git 管理外）
+cp backend/.env.example backend/.env    # AUTH0_DOMAIN / AUTH0_AUDIENCE を記入
+cp frontend/.env.example frontend/.env  # Auth0 の各値・SESSION_SECRET を記入
+```
+
+- バックエンドとフロントの `AUTH_DISABLED` は揃える（本番Auth0検証なら両方 `false`、開発バイパスなら両方 `true`）
+- テーブルはバックエンド起動時のAutoMigrateで自動作成
+
 ## 起動手順（毎回）
 
 ```bash
-# ターミナル1: バックエンド（:8080）
-cd backend && CGO_ENABLED=0 go run ./cmd/api
+# ターミナル1: バックエンド（:8080）。.env を読み込んで起動する
+cd backend && ./run.sh
 
 # ターミナル2: フロントエンド（:5173）
 cd frontend && nvm use && npm run dev
 ```
 
-- 初回のみ `createdb -h localhost -U "$(whoami)" clinic_inventory`（psql系コマンドは `export PATH="/usr/local/opt/postgresql@16/bin:$PATH"` で通す）
-- テーブルはバックエンド起動時のAutoMigrateで自動作成
+- `run.sh` は `backend/.env` を読み込み、`CGO_ENABLED=0 go run ./cmd/api` を実行する
 - このマシンではGoのビルド・テストに `CGO_ENABLED=0` が必須（詳細は [backend/README.md](backend/README.md)）
 
 ## プロジェクト構成
