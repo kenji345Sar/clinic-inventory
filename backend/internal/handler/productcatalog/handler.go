@@ -80,6 +80,10 @@ func (h *Handler) toClinicProductResponse(ctx context.Context, p *proddomain.Cli
 }
 
 func (h *Handler) postProduct(w http.ResponseWriter, r *http.Request) {
+	if err := httputil.AuthorizeFacility(r.Context(), r.PathValue("facilityId")); err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
 	facilityID, err := httputil.ParseID(r.PathValue("facilityId"))
 	if err != nil {
 		httputil.WriteError(w, err)
@@ -122,6 +126,10 @@ func (h *Handler) postProduct(w http.ResponseWriter, r *http.Request) {
 // クエリパラメータ jan が指定された場合はJANでの引き当て（バーコード消費の入口）として動作し、
 // 該当1件のみの配列（見つからなければ404）を返す。
 func (h *Handler) listProducts(w http.ResponseWriter, r *http.Request) {
+	if err := httputil.AuthorizeFacility(r.Context(), r.PathValue("facilityId")); err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
 	facilityID, err := httputil.ParseID(r.PathValue("facilityId"))
 	if err != nil {
 		httputil.WriteError(w, err)

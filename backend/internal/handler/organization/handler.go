@@ -108,11 +108,23 @@ func (h *Handler) postFacility(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusCreated, toFacilityResponse(facility))
 }
 
+// listFacilities はクリニック一覧を返す。facility_userロールのユーザーには
+// 自分の所属クリニックだけを返す(一覧そのものが認可の境界になる)。
+// adminロール、またはロール未設定(認可の段階的導入中)のユーザーには全件返す。
 func (h *Handler) listFacilities(w http.ResponseWriter, r *http.Request) {
 	facilities, err := h.facilityRepo.FindAll(r.Context())
 	if err != nil {
 		httputil.WriteError(w, err)
 		return
+	}
+	if claims, ok := httputil.AppClaimsFrom(r.Context()); ok && claims.Role == httputil.RoleFacilityUser {
+		filtered := make([]*orgdomain.Facility, 0, 1)
+		for _, f := range facilities {
+			if f.ID().String() == claims.FacilityID {
+				filtered = append(filtered, f)
+			}
+		}
+		facilities = filtered
 	}
 	res := make([]facilityResponse, 0, len(facilities))
 	for _, f := range facilities {

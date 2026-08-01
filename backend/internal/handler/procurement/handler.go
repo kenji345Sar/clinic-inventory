@@ -5,6 +5,7 @@ import (
 
 	procapp "clinic-inventory/internal/application/procurement"
 	procdomain "clinic-inventory/internal/domain/procurement"
+	shareddomain "clinic-inventory/internal/domain/shared"
 	"clinic-inventory/internal/handler/httputil"
 )
 
@@ -67,6 +68,10 @@ func toPurchaseOrderResponse(o *procdomain.PurchaseOrder) purchaseOrderResponse 
 }
 
 func (h *Handler) postOrder(w http.ResponseWriter, r *http.Request) {
+	if err := httputil.AuthorizeFacility(r.Context(), r.PathValue("facilityId")); err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
 	facilityID, err := httputil.ParseID(r.PathValue("facilityId"))
 	if err != nil {
 		httputil.WriteError(w, err)
@@ -115,6 +120,10 @@ func (h *Handler) postOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listOrders(w http.ResponseWriter, r *http.Request) {
+	if err := httputil.AuthorizeFacility(r.Context(), r.PathValue("facilityId")); err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
 	facilityID, err := httputil.ParseID(r.PathValue("facilityId"))
 	if err != nil {
 		httputil.WriteError(w, err)
@@ -133,6 +142,10 @@ func (h *Handler) listOrders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getOrder(w http.ResponseWriter, r *http.Request) {
+	if err := httputil.AuthorizeFacility(r.Context(), r.PathValue("facilityId")); err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
 	orderID, err := httputil.ParseID(r.PathValue("orderId"))
 	if err != nil {
 		httputil.WriteError(w, err)
@@ -141,6 +154,12 @@ func (h *Handler) getOrder(w http.ResponseWriter, r *http.Request) {
 	order, err := h.purchaseOrderRepo.FindByID(r.Context(), orderID)
 	if err != nil {
 		httputil.WriteError(w, err)
+		return
+	}
+	// URLのfacilityIdと発注の実際のfacilityIdが一致するかを確認する。
+	// 一致しなければ、他クリニックの発注IDを自分のfacilityId配下のURLで直接叩いても見えないようにする。
+	if order.FacilityID().String() != r.PathValue("facilityId") {
+		httputil.WriteError(w, shareddomain.ErrNotFound)
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, toPurchaseOrderResponse(order))

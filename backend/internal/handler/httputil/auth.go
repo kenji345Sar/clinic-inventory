@@ -2,6 +2,7 @@ package httputil
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -11,6 +12,8 @@ import (
 	jwtmiddleware "github.com/auth0/go-jwt-middleware/v2"
 	"github.com/auth0/go-jwt-middleware/v2/jwks"
 	"github.com/auth0/go-jwt-middleware/v2/validator"
+
+	shareddomain "clinic-inventory/internal/domain/shared"
 )
 
 // RequireAuth は Auth0 が発行した JWT(アクセストークン)を検証するミドルウェア。
@@ -43,6 +46,7 @@ func RequireAuth(next http.Handler) http.Handler {
 		validator.RS256,
 		issuerURL.String(),
 		[]string{audience},
+		validator.WithCustomClaims(func() validator.CustomClaims { return &AppClaims{} }),
 	)
 	if err != nil {
 		log.Fatalf("[auth] JWTバリデータの初期化に失敗: %v", err)
@@ -67,4 +71,64 @@ func authErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 func ClaimsFrom(ctx context.Context) (*validator.ValidatedClaims, bool) {
 	claims, ok := ctx.Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	return claims, ok
+}
+
+// カスタムクレームの名前空間。Auth0はOIDC標準クレームとの衝突を避けるため、
+// カスタムクレーム名をURL形式の名前空間で修飾することを要求する。
+const claimNamespace = "https://api.clinic-inventory/"
+
+const (
+	// RoleAdmin は全クリニックを操作・閲覧できるロール(法人管理者・システム管理者向け)。
+	RoleAdmin = "admin"
+	// RoleFacilityUser は自分の所属クリニック(FacilityID)のみ操作・閲覧できるロール。
+	RoleFacilityUser = "facility_user"
+)
+
+// AppClaims はAuth0のApp MetadataからPost-Login Actionで載せるカスタムクレーム。
+// role未設定のユーザー(Auth0側での認可ロール割り当てがまだ済んでいない移行期)は
+// ゼロ値(Role=="")になるため、AuthorizeFacilityは「制限なし」として扱う。
+type AppClaims struct {
+	Role       string `json:"https://api.clinic-inventory/role"`
+	FacilityID string `json:"https://api.clinic-inventory/facility_id"`
+}
+
+// Validate は go-jwt-middleware の CustomClaims インターフェースが要求するフック。
+// クレームの形式チェックはここでは行わない(値の意味づけは AuthorizeFacility 側の責務)。
+func (c *AppClaims) Validate(context.Context) error { return nil }
+
+// AppClaimsFrom は検証済みのカスタムクレーム(role・facilityId)を取り出す。
+// AUTH_DISABLED時、またはAuth0側でロールがまだ設定されていないユーザーの場合は ok=false。
+func AppClaimsFrom(ctx context.Context) (*AppClaims, bool) {
+	claims, ok := ClaimsFrom(ctx)
+	if !ok || claims.CustomClaims == nil {
+		return nil, false
+	}
+	appClaims, ok := claims.CustomClaims.(*AppClaims)
+	return appClaims, ok
+}
+
+// AuthorizeFacility は、ログイン中のユーザーが指定クリニック(facilityID文字列)を
+// 操作・閲覧できるかを判定する。権限が無ければ shareddomain.ErrForbidden を返す。
+//
+// 認可はまだ全ユーザーに展開されていない段階的導入のため、以下は「制限なし」として通す:
+//   - AUTH_DISABLED時(開発バイパス、クレーム自体が無い)
+//   - Auth0側でまだroleを割り当てていないユーザー(Role=="")
+//
+// admin は常に許可。facility_user は自分の FacilityID と一致する場合のみ許可する。
+func AuthorizeFacility(ctx context.Context, facilityID string) error {
+	claims, ok := AppClaimsFrom(ctx)
+	if !ok || claims.Role == "" {
+		return nil
+	}
+	switch claims.Role {
+	case RoleAdmin:
+		return nil
+	case RoleFacilityUser:
+		if claims.FacilityID == facilityID {
+			return nil
+		}
+		return fmt.Errorf("このクリニックへのアクセス権がありません: %w", shareddomain.ErrForbidden)
+	default:
+		return nil
+	}
 }

@@ -31,6 +31,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		WriteJSON(w, http.StatusNotFound, errorResponse{Error: err.Error()})
 	case errors.Is(err, shareddomain.ErrConflict):
 		WriteJSON(w, http.StatusConflict, errorResponse{Error: err.Error()})
+	case errors.Is(err, shareddomain.ErrForbidden):
+		WriteJSON(w, http.StatusForbidden, errorResponse{Error: err.Error()})
 	default:
 		WriteJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 	}
