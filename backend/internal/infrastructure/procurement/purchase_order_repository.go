@@ -82,6 +82,35 @@ func (r *PurchaseOrderRepository) FindByFacility(ctx context.Context, facilityID
 	return orders, nil
 }
 
+func (r *PurchaseOrderRepository) FindByDistributor(ctx context.Context, distributorID shareddomain.ID) ([]*procdomain.PurchaseOrder, error) {
+	var orderModels []PurchaseOrderModel
+	err := r.db.WithContext(ctx).
+		Where("distributor_id = ?", uuid.UUID(distributorID)).
+		Order("id").
+		Find(&orderModels).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(orderModels) == 0 {
+		return []*procdomain.PurchaseOrder{}, nil
+	}
+
+	orderIDs := make([]uuid.UUID, 0, len(orderModels))
+	for _, m := range orderModels {
+		orderIDs = append(orderIDs, m.ID)
+	}
+	linesByOrder, err := r.findLines(ctx, orderIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	orders := make([]*procdomain.PurchaseOrder, 0, len(orderModels))
+	for _, m := range orderModels {
+		orders = append(orders, toDomainPurchaseOrder(m, linesByOrder[m.ID]))
+	}
+	return orders, nil
+}
+
 // findLines は複数発注の明細をまとめて引き、発注IDごとにグループ化して返す。
 // 一覧表示で発注ごとにクエリを繰り返すN+1を避ける。
 func (r *PurchaseOrderRepository) findLines(ctx context.Context, orderIDs []uuid.UUID) (map[uuid.UUID][]PurchaseOrderLineModel, error) {

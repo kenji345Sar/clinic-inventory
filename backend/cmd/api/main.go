@@ -11,6 +11,7 @@ import (
 	procapp "clinic-inventory/internal/application/procurement"
 	prodapp "clinic-inventory/internal/application/productcatalog"
 	disthandler "clinic-inventory/internal/handler/distributorcatalog"
+	portalhandler "clinic-inventory/internal/handler/distributorportal"
 	"clinic-inventory/internal/handler/httputil"
 	orghandler "clinic-inventory/internal/handler/organization"
 	prochandler "clinic-inventory/internal/handler/procurement"
@@ -77,13 +78,19 @@ func main() {
 	prodhandler.New(registerClinicProduct, clinicProductRepo, distributorProductRepo, distributorRepo).Register(protected)
 	prochandler.New(createPurchaseOrder, purchaseOrderRepo).Register(protected)
 
-	// ルーティング。health は認証不要、それ以外の /api/* は RequireAuth を通す。
-	// Go 1.22 の ServeMux は "GET /api/health" を "/api/" より具体的として優先するため、
-	// health だけ素通しし、残りの業務APIは protected(認証必須)へ委譲される。
+	// 卸ポータル向けAPI(/api/portal/...)。卸業者はまだAuth0アカウントを持たないため未認証で公開する
+	// (docs/requirements.md 8章「後続」。認証を入れる際はここにRequireAuth相当を差し込む)。
+	portal := http.NewServeMux()
+	portalhandler.New(registerDistributorProduct, distributorRepo, distributorProductRepo, purchaseOrderRepo, clinicProductRepo, facilityRepo).Register(portal)
+
+	// ルーティング。health と /api/portal/ は認証不要、それ以外の /api/* は RequireAuth を通す。
+	// Go の ServeMux は登録パターンのうちより具体的なもの(サブツリーが狭い方)を優先するため、
+	// "/api/portal/" は "/api/" より先に一致し、health 同様に素通しされる。
 	root := http.NewServeMux()
 	root.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	root.Handle("/api/portal/", portal)
 	root.Handle("/api/", httputil.RequireAuth(protected))
 
 	addr := ":" + port()

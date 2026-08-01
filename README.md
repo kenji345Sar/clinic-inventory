@@ -30,19 +30,24 @@ cp frontend/.env.example frontend/.env  # Auth0 の各値・SESSION_SECRET を�
 # ターミナル1: バックエンド（:8080）。.env を読み込んで起動する
 cd backend && ./run.sh
 
-# ターミナル2: フロントエンド（:5173）
+# ターミナル2: クリニック向けフロントエンド（:5173）
 cd frontend && nvm use && npm run dev
+
+# ターミナル3: 卸ポータル（:5174）
+cd distributor-portal && nvm use 22 && npm run dev
 ```
 
 - `run.sh` は `backend/.env` を読み込み、`CGO_ENABLED=0 go run ./cmd/api` を実行する
 - このマシンではGoのビルド・テストに `CGO_ENABLED=0` が必須（詳細は [backend/README.md](backend/README.md)）
+- 卸ポータルは未認証（卸業者にはまだAuth0アカウントが無いため）。`AUTH_DISABLED` の設定に関わらず `/api/portal/...` はトークン無しでアクセスできる
 
 ## プロジェクト構成
 
 ```
-backend/   … Go + gorm。DDDのモジュラーモノリス（コンテキストごとに domain/application/infrastructure/handler）
-frontend/  … React + React Router v7+（Remix後継、フレームワークモード）+ Tailwind
-docs/      … 要件定義・ドメインモデル
+backend/             … Go + gorm。DDDのモジュラーモノリス（コンテキストごとに domain/application/infrastructure/handler）
+frontend/            … クリニック向けサイト。React + React Router v7+（Remix後継、フレームワークモード）+ Tailwind
+distributor-portal/  … 卸業者向けポータル。frontendと同じ技術構成の別アプリ（未認証、:5174）
+docs/                … 要件定義・ドメインモデル
 ```
 
 ## フロントエンドの技術選定メモ
@@ -51,7 +56,18 @@ docs/      … 要件定義・ドメインモデル
 
 ## 実装済み画面
 
+### クリニック向けサイト（frontend）
+
 | パス | 内容 |
 |---|---|
 | / | クリニック選択 |
 | /facilities/:id/products | 商品マスタ。卸商品検索（卸選択→キーワード絞り込み）→クリニック商品登録、登録済み一覧 |
+| /facilities/:id/orders | 発注。卸業者ごとに数量入力→発注確定、発注履歴の閲覧 |
+
+### 卸ポータル（distributor-portal）
+
+| パス | 内容 |
+|---|---|
+| / | 卸業者選択 |
+| /distributors/:id/orders | 受注一覧。クリニックが確定した発注をクリニック名・卸商品コード付きで確認できる |
+| /distributors/:id/products | 自社商品マスタ。一覧・登録 |
