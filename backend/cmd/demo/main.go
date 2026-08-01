@@ -53,7 +53,7 @@ func runOrganizationDemo(ctx context.Context, db *gorm.DB) shareddomain.ID {
 	facilityRepo := orginfra.NewFacilityRepository(db)
 
 	createCorporation := orgapp.NewCreateCorporationUseCase(corporationRepo)
-	createFacility := orgapp.NewCreateFacilityUseCase(facilityRepo)
+	createFacility := orgapp.NewCreateFacilityUseCase(facilityRepo, corporationRepo)
 
 	corporation, err := createCorporation.Execute(ctx, "サンプル動物病院グループ")
 	if err != nil {

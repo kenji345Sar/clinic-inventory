@@ -65,7 +65,7 @@ func main() {
 
 	// ユースケース
 	createCorporation := orgapp.NewCreateCorporationUseCase(corporationRepo)
-	createFacility := orgapp.NewCreateFacilityUseCase(facilityRepo)
+	createFacility := orgapp.NewCreateFacilityUseCase(facilityRepo, corporationRepo)
 	createDistributor := distapp.NewCreateDistributorUseCase(distributorRepo)
 	registerDistributorProduct := distapp.NewRegisterDistributorProductUseCase(distributorProductRepo)
 	registerClinicProduct := prodapp.NewRegisterClinicProductUseCase(clinicProductRepo, distributorProductRepo)
