@@ -3,8 +3,10 @@ package procurement
 import (
 	"context"
 	"fmt"
+	"time"
 
 	distdomain "clinic-inventory/internal/domain/distributorcatalog"
+	orgdomain "clinic-inventory/internal/domain/organization"
 	procdomain "clinic-inventory/internal/domain/procurement"
 	proddomain "clinic-inventory/internal/domain/productcatalog"
 	shareddomain "clinic-inventory/internal/domain/shared"
@@ -21,6 +23,8 @@ type CreatePurchaseOrderUseCase struct {
 	distributorRepo        distdomain.DistributorRepository
 	distributorProductRepo distdomain.DistributorProductRepository
 	clinicProductRepo      proddomain.ClinicProductRepository
+	facilityRepo           orgdomain.FacilityRepository
+	csvUploader            PurchaseOrderCsvUploader
 }
 
 func NewCreatePurchaseOrderUseCase(
@@ -28,12 +32,16 @@ func NewCreatePurchaseOrderUseCase(
 	distributorRepo distdomain.DistributorRepository,
 	distributorProductRepo distdomain.DistributorProductRepository,
 	clinicProductRepo proddomain.ClinicProductRepository,
+	facilityRepo orgdomain.FacilityRepository,
+	csvUploader PurchaseOrderCsvUploader,
 ) *CreatePurchaseOrderUseCase {
 	return &CreatePurchaseOrderUseCase{
 		purchaseOrderRepo:      purchaseOrderRepo,
 		distributorRepo:        distributorRepo,
 		distributorProductRepo: distributorProductRepo,
 		clinicProductRepo:      clinicProductRepo,
+		facilityRepo:           facilityRepo,
+		csvUploader:            csvUploader,
 	}
 }
 
@@ -59,6 +67,7 @@ func (uc *CreatePurchaseOrderUseCase) Execute(ctx context.Context, in CreatePurc
 		return nil, err
 	}
 
+	csvLines := make([]PurchaseOrderCsvLine, 0, len(in.Lines))
 	for _, line := range in.Lines {
 		clinicProduct, err := uc.clinicProductRepo.FindByID(ctx, line.ClinicProductID)
 		if err != nil {
@@ -84,11 +93,31 @@ func (uc *CreatePurchaseOrderUseCase) Execute(ctx context.Context, in CreatePurc
 		if err := order.AddLine(line.ClinicProductID, line.Quantity, clinicProduct.UnitPrice()); err != nil {
 			return nil, err
 		}
+
+		// 発注CSVは卸商品コード・商品名（卸側の呼び方）で明細を表現するため、
+		// クリニック商品ではなく解決済みのDistributorProduct側の値を使う。
+		csvLines = append(csvLines, PurchaseOrderCsvLine{
+			DistributorProductCode: distributorProduct.DistributorProductCode(),
+			ProductName:            distributorProduct.Name(),
+			Quantity:               line.Quantity,
+			UnitPrice:              clinicProduct.UnitPrice(),
+		})
 	}
 
 	// 明細0件ならここでエラーになる。1ステップ作成方針のため作成と同時に確定する。
 	if err := order.Confirm(); err != nil {
 		return nil, err
+	}
+
+	facility, err := uc.facilityRepo.FindByID(ctx, in.FacilityID)
+	if err != nil {
+		return nil, fmt.Errorf("発注元クリニックが見つかりません: %w", err)
+	}
+
+	// 発注CSVが卸に届いて初めて「発注確定」と言えるため、CSVアップロードが失敗したら
+	// 発注は永続化しない（確定したのに卸に届いていない、という不整合を避ける）。
+	if err := uc.csvUploader.Upload(ctx, order, facility.Name(), time.Now(), csvLines); err != nil {
+		return nil, fmt.Errorf("発注CSVのアップロードに失敗しました: %w", err)
 	}
 
 	if err := uc.purchaseOrderRepo.Create(ctx, order); err != nil {

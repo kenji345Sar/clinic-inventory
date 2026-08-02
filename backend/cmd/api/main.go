@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	distapp "clinic-inventory/internal/application/distributorcatalog"
 	orgapp "clinic-inventory/internal/application/organization"
@@ -21,6 +25,7 @@ import (
 	orginfra "clinic-inventory/internal/infrastructure/organization"
 	procinfra "clinic-inventory/internal/infrastructure/procurement"
 	prodinfra "clinic-inventory/internal/infrastructure/productcatalog"
+	"clinic-inventory/internal/infrastructure/storage"
 )
 
 func dsn() string {
@@ -37,11 +42,27 @@ func port() string {
 	return "8080"
 }
 
+func s3Bucket() string {
+	if v := os.Getenv("S3_BUCKET_ORDERS"); v != "" {
+		return v
+	}
+	return "clinic-inventory-orders-dev"
+}
+
 func main() {
 	db, err := database.Connect(dsn())
 	if err != nil {
 		log.Fatalf("failed to connect database: %v", err)
 	}
+
+	// 発注CSVのアップロード先。認証情報・リージョンは標準のAWS環境変数
+	// (AWS_REGION, AWS_ACCESS_KEY_ID等)またはAWS_ENDPOINT_URL_S3(LocalStack等)から解決する。
+	awsCfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		log.Fatalf("failed to load AWS config: %v", err)
+	}
+	s3Client := s3.NewFromConfig(awsCfg)
+	orderCsvUploader := procinfra.NewPurchaseOrderCsvUploader(storage.NewS3Uploader(s3Client, s3Bucket()))
 
 	if err := db.AutoMigrate(
 		&orginfra.CorporationModel{},
@@ -69,7 +90,7 @@ func main() {
 	createDistributor := distapp.NewCreateDistributorUseCase(distributorRepo)
 	registerDistributorProduct := distapp.NewRegisterDistributorProductUseCase(distributorProductRepo)
 	registerClinicProduct := prodapp.NewRegisterClinicProductUseCase(clinicProductRepo, distributorProductRepo)
-	createPurchaseOrder := procapp.NewCreatePurchaseOrderUseCase(purchaseOrderRepo, distributorRepo, distributorProductRepo, clinicProductRepo)
+	createPurchaseOrder := procapp.NewCreatePurchaseOrderUseCase(purchaseOrderRepo, distributorRepo, distributorProductRepo, clinicProductRepo, facilityRepo, orderCsvUploader)
 
 	// 認証が必要な業務APIハンドラ
 	protected := http.NewServeMux()
