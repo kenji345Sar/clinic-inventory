@@ -244,3 +244,107 @@ err := uc.clinicProductRepo.Create(ctx, product)
 
 逆引き（ボタン→コード）の探し方: フロントの`api.server.ts`でそのボタンが叩くURLパスを見て、
 そのパスをhandlerの`Register()`から探すと入口の関数が見つかる。あとは`Execute`へ降りるだけ。
+
+---
+
+## 9. URLから画面ファイルを特定する方法（逆引きの入口）
+
+ブラウザのアドレスバーのURLから、対応する画面ファイルをどう探すか。
+このプロジェクトはReact Router v7の「フレームワークモード」で、ルーティングは
+ファイル名の規約ではなく`routes.ts`に**明示的な対応表**として書いてある。
+
+```ts
+// frontend/app/routes.ts
+export default [
+  index("routes/home.tsx"),
+  route("facilities/:facilityId/products", "routes/facility-products.tsx"),
+  route("facilities/:facilityId/orders", "routes/facility-orders.tsx"),   // ← /facilities/{id}/orders はここ
+  ...
+] satisfies RouteConfig;
+```
+
+例: `http://localhost:5173/facilities/38057321-.../orders` というURLなら、
+`facilities/:facilityId/orders`パターンに一致し`routes/facility-orders.tsx`が該当ファイルだとわかる。
+このファイル1つに`loader`（画面表示時のデータ取得）・`action`（フォーム送信時の処理）・
+コンポーネント本体がまとまっているのがReact Router v7の特徴（petty-cash対応: Controller+Viewが1ファイルに寄った形）。
+
+バックエンド側の逆引きも同じ考え方で、`internal/handler/<コンテキスト>/handler.go`の
+`Register()`がURLパターン→関数の対応表になっている（3章参照）。
+
+---
+
+## 10. 書き込みの1往復（発展編）— 発注確定ボタンでS3アップロードを含む例
+
+7章は「登録」ボタンでINSERT1回のシンプルな例だった。ここでは発注画面
+（`/facilities/:id/orders`）の「この卸に発注」ボタンを押したときの、
+**外部サービス(S3)への副作用を含む**書き込みの1往復を追う。S3周りの詳細は
+[`s3-storage.md`](../architecture/s3-storage.md)を参照。
+
+### 10-1. 画面: 卸ごとのフォームをsubmit
+
+```tsx
+// frontend/app/routes/facility-orders.tsx
+<Form method="post">
+  <input type="hidden" name="distributorId" value={group.distributorId} />
+  <input name={`qty_${p.id}`} type="number" ... />
+  <button type="submit">この卸に発注</button>
+</Form>
+```
+
+「1発注 = 1卸」なので、卸業者ごとに別々のフォームが並んでいる（画面は卸の数だけ`<Form>`を描画）。
+
+### 10-2. フロント: actionがqty_*を集めてAPIを呼ぶ
+
+```ts
+// action() の中（facility-orders.tsx）
+// qty_<clinicProductId> というキーを集めて、数量1以上の行だけ明細にする
+const order = await api.createPurchaseOrder(accessToken, params.facilityId, {
+  distributorId,
+  lines, // [{ clinicProductId, quantity }, ...]
+});
+// = fetch POST http://localhost:8080/api/facilities/{facilityId}/orders
+```
+
+### 10-3. Go: handler → ユースケース
+
+`ServeMux`の対応表 `"POST /api/facilities/{facilityId}/orders"` に一致し、
+`internal/handler/procurement/handler.go`の`postOrder`が呼ばれる。
+handlerはここでも変換だけ（認可チェック→ID/JSONパース→`Execute`呼び出し）。
+
+### 10-4. ユースケース: 検証 → S3アップロード → 保存、の順序が肝
+
+```go
+// internal/application/procurement/create_purchase_order.go の Execute
+// 手順1: 発注先の卸業者が実在するか
+uc.distributorRepo.FindByID(ctx, in.DistributorID)
+
+// 手順2: 明細ごとに クリニック商品→卸商品→卸業者 を辿り、
+//        発注先の卸と一致するか検証（「1発注=1卸」の実体レベルの担保）
+distributorProduct, _ := uc.distributorProductRepo.FindByID(ctx, clinicProduct.DistributorProductID())
+if distributorProduct.DistributorID() != in.DistributorID { return nil, ...ErrConflict }
+
+// 手順3: 発注時点の単価をスナップショットして明細に固定
+order.AddLine(line.ClinicProductID, line.Quantity, clinicProduct.UnitPrice())
+
+// 手順4: 明細0件ならエラー。1ステップ作成方針のため作成と同時に確定する
+order.Confirm()
+
+// 手順5: 確定したのでCSVをS3にアップロード（ここが今回の副作用）
+uc.csvUploader.Upload(ctx, order, facility.Name(), time.Now(), csvLines)
+//   失敗したら return error でここで打ち切り → 次のDB保存に進まない
+
+// 手順6: アップロード成功後にようやくDB保存
+uc.purchaseOrderRepo.Create(ctx, order)
+//   → INSERT INTO purchase_orders / purchase_order_lines ...
+```
+
+**手順5→6の順序が業務ルール**: 「発注CSVが卸に届いて初めて確定と言える」ため、
+S3アップロードが失敗したらDBには保存しない（確定したのに卸に届いていない、という
+不整合を避けるため）。7章の例（検証→ドメイン生成→保存のみ）と違い、外部サービス呼び出しが
+DB保存より**前**に来る点が今回のポイント。
+
+### 10-5. 帰り道
+
+- 成功: 201 → actionが`{ok: true, orderId}`を返す → 画面に「発注を確定しました。」+ 発注履歴に新しい行
+- 失敗（卸不一致・S3アップロード失敗など）: `fmt.Errorf(...)`のメッセージが
+  `httputil.WriteError`経由でエラーレスポンスになり、actionが捕まえて画面に赤字表示
