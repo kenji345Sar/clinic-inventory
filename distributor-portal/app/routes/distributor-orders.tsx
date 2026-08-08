@@ -11,14 +11,19 @@ export function meta() {
 // 現状の発注フローは「作成と同時に確定」の1ステップなので、ここに出ている発注は
 // すべて確定済み(=卸が受注したとみなせる)。
 export async function loader({ params }: Route.LoaderArgs) {
-  const orders = await api.listOrders(params.distributorId);
+  const [distributors, orders] = await Promise.all([
+    api.listDistributors(),
+    api.listOrders(params.distributorId),
+  ]);
+  const distributorName =
+    distributors.find((d) => d.id === params.distributorId)?.name ?? "不明な卸業者";
   // 新しい発注ほど上に出るようにする。
   const sorted = [...orders].reverse();
-  return { distributorId: params.distributorId, orders: sorted };
+  return { distributorId: params.distributorId, distributorName, orders: sorted };
 }
 
 export default function DistributorOrders({ loaderData }: Route.ComponentProps) {
-  const { distributorId, orders } = loaderData;
+  const { distributorId, distributorName, orders } = loaderData;
 
   return (
     <main className="mx-auto max-w-5xl p-8">
@@ -30,7 +35,10 @@ export default function DistributorOrders({ loaderData }: Route.ComponentProps) 
         <span>受注一覧</span>
       </nav>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">受注一覧</h1>
+        <div>
+          <p className="text-sm text-gray-500">{distributorName}</p>
+          <h1 className="text-2xl font-bold">受注一覧</h1>
+        </div>
         <Link
           to={`/distributors/${distributorId}/products`}
           className="text-sm text-blue-600 hover:underline"

@@ -8,8 +8,13 @@ export function meta() {
 }
 
 export async function loader({ params }: Route.LoaderArgs) {
-  const products = await api.listProducts(params.distributorId);
-  return { distributorId: params.distributorId, products };
+  const [distributors, products] = await Promise.all([
+    api.listDistributors(),
+    api.listProducts(params.distributorId),
+  ]);
+  const distributorName =
+    distributors.find((d) => d.id === params.distributorId)?.name ?? "不明な卸業者";
+  return { distributorId: params.distributorId, distributorName, products };
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
@@ -38,7 +43,7 @@ export default function DistributorProducts({
   loaderData,
   actionData,
 }: Route.ComponentProps) {
-  const { distributorId, products } = loaderData;
+  const { distributorId, distributorName, products } = loaderData;
 
   return (
     <main className="mx-auto max-w-4xl p-8">
@@ -50,7 +55,10 @@ export default function DistributorProducts({
         <span>商品マスタ</span>
       </nav>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">自社商品マスタ</h1>
+        <div>
+          <p className="text-sm text-gray-500">{distributorName}</p>
+          <h1 className="text-2xl font-bold">自社商品マスタ</h1>
+        </div>
         <Link
           to={`/distributors/${distributorId}/orders`}
           className="text-sm text-blue-600 hover:underline"
