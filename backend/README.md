@@ -39,6 +39,15 @@ CGO_ENABLED=0 go run ./cmd/api
 CGO_ENABLED=0 go run ./cmd/demo
 ```
 
+`listen tcp :8080: bind: address already in use` で起動に失敗する場合、同じポートで前回のプロセスが起動したままになっている（`./run.sh`をバックグラウンドで動かした後に停止し忘れた等）。該当プロセスを止めてから起動し直す。
+
+```bash
+lsof -ti:8080 -sTCP:LISTEN | xargs kill
+./run.sh
+```
+
+（フロントの`:5173`/`:5174`が同様の状態になった場合もポート番号を読み替えて同じ手順でよい）
+
 ## APIエンドポイント
 
 | メソッド/パス | 内容 |
