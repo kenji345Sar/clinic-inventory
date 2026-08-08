@@ -254,5 +254,10 @@ func (h *Handler) getOrder(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, shareddomain.ErrNotFound)
 		return
 	}
+	// 下書き（カートの中身）はまだ卸に届いていないので、IDを直接叩かれても見せない。
+	if order.Status() != procdomain.StatusConfirmed {
+		httputil.WriteError(w, shareddomain.ErrNotFound)
+		return
+	}
 	httputil.WriteJSON(w, http.StatusOK, h.toOrderResponse(r.Context(), order))
 }

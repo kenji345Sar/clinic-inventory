@@ -2,6 +2,7 @@ package procurement_test
 
 import (
 	"testing"
+	"time"
 
 	procdomain "clinic-inventory/internal/domain/procurement"
 	shareddomain "clinic-inventory/internal/domain/shared"
@@ -115,7 +116,7 @@ func TestPurchaseOrder_AddLine(t *testing.T) {
 		if err := o.AddLine(shareddomain.NewID(), 5, 1000); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if err := o.Confirm(); err != nil {
+		if err := o.Confirm(time.Now()); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if err := o.AddLine(shareddomain.NewID(), 1, 1000); err == nil {
@@ -164,8 +165,12 @@ func TestPurchaseOrder_Confirm(t *testing.T) {
 		if err := o.AddLine(shareddomain.NewID(), 5, 1000); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if err := o.Confirm(); err != nil {
+		confirmedAt := time.Now()
+		if err := o.Confirm(confirmedAt); err != nil {
 			t.Fatalf("unexpected error: %v", err)
+		}
+		if o.ConfirmedAt() == nil || !o.ConfirmedAt().Equal(confirmedAt) {
+			t.Errorf("ConfirmedAt() = %v, want %v", o.ConfirmedAt(), confirmedAt)
 		}
 		if o.Status() != procdomain.StatusConfirmed {
 			t.Errorf("Status() = %q, want %q", o.Status(), procdomain.StatusConfirmed)
@@ -177,7 +182,7 @@ func TestPurchaseOrder_Confirm(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if err := o.Confirm(); err == nil {
+		if err := o.Confirm(time.Now()); err == nil {
 			t.Fatal("expected error, got nil")
 		}
 	})
@@ -190,10 +195,10 @@ func TestPurchaseOrder_Confirm(t *testing.T) {
 		if err := o.AddLine(shareddomain.NewID(), 5, 1000); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if err := o.Confirm(); err != nil {
+		if err := o.Confirm(time.Now()); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if err := o.Confirm(); err == nil {
+		if err := o.Confirm(time.Now()); err == nil {
 			t.Fatal("expected error, got nil")
 		}
 	})

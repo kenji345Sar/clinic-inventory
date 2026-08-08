@@ -2,6 +2,7 @@ package procurement
 
 import (
 	"errors"
+	"time"
 
 	shareddomain "clinic-inventory/internal/domain/shared"
 )
@@ -43,6 +44,7 @@ type PurchaseOrder struct {
 	distributorID shareddomain.ID
 	status        OrderStatus
 	lines         []OrderLine
+	confirmedAt   *time.Time
 }
 
 // NewPurchaseOrder は下書き状態の発注を作る。明細は AddLine で追加する。
@@ -88,7 +90,9 @@ func (o *PurchaseOrder) AddLine(clinicProductID shareddomain.ID, quantity, unitP
 }
 
 // Confirm は下書きを確定する。明細が1件以上必要。
-func (o *PurchaseOrder) Confirm() error {
+// confirmedAt は発注日時として永続化され、発注CSVの「発注日」とも揃えるため
+// 呼び出し元（ユースケース層）が生成した同一の time.Time を渡す想定。
+func (o *PurchaseOrder) Confirm(confirmedAt time.Time) error {
 	if o.status == StatusConfirmed {
 		return errors.New("既に確定済みです")
 	}
@@ -96,6 +100,7 @@ func (o *PurchaseOrder) Confirm() error {
 		return errors.New("明細が無い発注は確定できません")
 	}
 	o.status = StatusConfirmed
+	o.confirmedAt = &confirmedAt
 	return nil
 }
 
@@ -103,6 +108,9 @@ func (o *PurchaseOrder) ID() shareddomain.ID            { return o.id }
 func (o *PurchaseOrder) FacilityID() shareddomain.ID    { return o.facilityID }
 func (o *PurchaseOrder) DistributorID() shareddomain.ID { return o.distributorID }
 func (o *PurchaseOrder) Status() OrderStatus            { return o.status }
+
+// ConfirmedAt は確定日時。下書き中はnil。
+func (o *PurchaseOrder) ConfirmedAt() *time.Time { return o.confirmedAt }
 
 // Lines は明細のコピーを返す。呼び出し側が返り値を書き換えても集約内部は壊れない。
 func (o *PurchaseOrder) Lines() []OrderLine {
@@ -125,6 +133,7 @@ func ReconstructPurchaseOrder(
 	id, facilityID, distributorID shareddomain.ID,
 	status OrderStatus,
 	lines []OrderLine,
+	confirmedAt *time.Time,
 ) *PurchaseOrder {
 	return &PurchaseOrder{
 		id:            id,
@@ -132,6 +141,7 @@ func ReconstructPurchaseOrder(
 		distributorID: distributorID,
 		status:        status,
 		lines:         lines,
+		confirmedAt:   confirmedAt,
 	}
 }
 

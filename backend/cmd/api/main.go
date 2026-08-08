@@ -90,14 +90,16 @@ func main() {
 	createDistributor := distapp.NewCreateDistributorUseCase(distributorRepo)
 	registerDistributorProduct := distapp.NewRegisterDistributorProductUseCase(distributorProductRepo)
 	registerClinicProduct := prodapp.NewRegisterClinicProductUseCase(clinicProductRepo, distributorProductRepo)
-	createPurchaseOrder := procapp.NewCreatePurchaseOrderUseCase(purchaseOrderRepo, distributorRepo, distributorProductRepo, clinicProductRepo, facilityRepo, orderCsvUploader)
+	saveDraftPurchaseOrder := procapp.NewSaveDraftPurchaseOrderUseCase(purchaseOrderRepo, distributorRepo, distributorProductRepo, clinicProductRepo)
+	confirmPurchaseOrder := procapp.NewConfirmPurchaseOrderUseCase(purchaseOrderRepo, distributorProductRepo, clinicProductRepo, facilityRepo, orderCsvUploader)
+	removeDraftPurchaseOrder := procapp.NewRemoveDraftPurchaseOrderUseCase(purchaseOrderRepo)
 
 	// 認証が必要な業務APIハンドラ
 	protected := http.NewServeMux()
 	orghandler.New(createCorporation, createFacility, facilityRepo).Register(protected)
 	disthandler.New(createDistributor, registerDistributorProduct, distributorRepo, distributorProductRepo).Register(protected)
 	prodhandler.New(registerClinicProduct, clinicProductRepo, distributorProductRepo, distributorRepo).Register(protected)
-	prochandler.New(createPurchaseOrder, purchaseOrderRepo).Register(protected)
+	prochandler.New(saveDraftPurchaseOrder, confirmPurchaseOrder, removeDraftPurchaseOrder, purchaseOrderRepo).Register(protected)
 
 	// 卸ポータル向けAPI(/api/portal/...)。卸業者はまだAuth0アカウントを持たないため未認証で公開する
 	// (docs/requirements.md 8章「後続」。認証を入れる際はここにRequireAuth相当を差し込む)。

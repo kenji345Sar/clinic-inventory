@@ -1,14 +1,19 @@
 package procurement
 
-import "github.com/google/uuid"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // PurchaseOrderModel は発注(親)の永続化用モデル(gorm)。
 // 明細は PurchaseOrderLineModel に別テーブルで持つ(1発注 : N明細)。
 type PurchaseOrderModel struct {
-	ID            uuid.UUID `gorm:"type:uuid;primaryKey"`
-	FacilityID    uuid.UUID `gorm:"type:uuid;not null;index"`
-	DistributorID uuid.UUID `gorm:"type:uuid;not null;index"`
-	Status        string    `gorm:"not null"`
+	ID            uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	FacilityID    uuid.UUID  `gorm:"type:uuid;not null;index"`
+	DistributorID uuid.UUID  `gorm:"type:uuid;not null;index"`
+	Status        string     `gorm:"not null"`
+	ConfirmedAt   *time.Time // 確定日時。下書き中はNULL
 }
 
 func (PurchaseOrderModel) TableName() string { return "purchase_orders" }

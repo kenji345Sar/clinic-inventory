@@ -2,72 +2,76 @@ package procurement
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"time"
 
 	distdomain "clinic-inventory/internal/domain/distributorcatalog"
-	orgdomain "clinic-inventory/internal/domain/organization"
 	procdomain "clinic-inventory/internal/domain/procurement"
 	proddomain "clinic-inventory/internal/domain/productcatalog"
 	shareddomain "clinic-inventory/internal/domain/shared"
 )
 
-// CreatePurchaseOrderUseCase はクリニックが特定の卸に対して発注を作成・確定する。
+// SaveDraftPurchaseOrderUseCase はクリニックが特定の卸に対する発注をカート（下書き）に積む。
 //
 // 「1発注 = 1卸」というルールを実体レベルで担保するのがこのユースケースの主目的。
 // 集約(PurchaseOrder)は数量や明細有無といった自己完結する不変条件だけを守り、
 // 「その明細のクリニック商品が本当にこの卸の商品か」という他集約にまたがる検証はここで行う
 // (RegisterClinicProductUseCase が卸商品の存在確認をユースケースで行うのと同じ切り分け)。
-type CreatePurchaseOrderUseCase struct {
+//
+// 同じ卸への追加は、既存の下書きがあればそこに明細を合算する（AddLine が同一クリニック商品の
+// 数量を自動加算する）。下書きの確定・卸へのCSV送付は ConfirmPurchaseOrderUseCase の責務。
+type SaveDraftPurchaseOrderUseCase struct {
 	purchaseOrderRepo      procdomain.PurchaseOrderRepository
 	distributorRepo        distdomain.DistributorRepository
 	distributorProductRepo distdomain.DistributorProductRepository
 	clinicProductRepo      proddomain.ClinicProductRepository
-	facilityRepo           orgdomain.FacilityRepository
-	csvUploader            PurchaseOrderCsvUploader
 }
 
-func NewCreatePurchaseOrderUseCase(
+func NewSaveDraftPurchaseOrderUseCase(
 	purchaseOrderRepo procdomain.PurchaseOrderRepository,
 	distributorRepo distdomain.DistributorRepository,
 	distributorProductRepo distdomain.DistributorProductRepository,
 	clinicProductRepo proddomain.ClinicProductRepository,
-	facilityRepo orgdomain.FacilityRepository,
-	csvUploader PurchaseOrderCsvUploader,
-) *CreatePurchaseOrderUseCase {
-	return &CreatePurchaseOrderUseCase{
+) *SaveDraftPurchaseOrderUseCase {
+	return &SaveDraftPurchaseOrderUseCase{
 		purchaseOrderRepo:      purchaseOrderRepo,
 		distributorRepo:        distributorRepo,
 		distributorProductRepo: distributorProductRepo,
 		clinicProductRepo:      clinicProductRepo,
-		facilityRepo:           facilityRepo,
-		csvUploader:            csvUploader,
 	}
 }
 
-type CreatePurchaseOrderLineInput struct {
+type SaveDraftPurchaseOrderLineInput struct {
 	ClinicProductID shareddomain.ID
 	Quantity        int
 }
 
-type CreatePurchaseOrderInput struct {
+type SaveDraftPurchaseOrderInput struct {
 	FacilityID    shareddomain.ID
 	DistributorID shareddomain.ID
-	Lines         []CreatePurchaseOrderLineInput
+	Lines         []SaveDraftPurchaseOrderLineInput
 }
 
-func (uc *CreatePurchaseOrderUseCase) Execute(ctx context.Context, in CreatePurchaseOrderInput) (*procdomain.PurchaseOrder, error) {
+func (uc *SaveDraftPurchaseOrderUseCase) Execute(ctx context.Context, in SaveDraftPurchaseOrderInput) (*procdomain.PurchaseOrder, error) {
 	// 発注先の卸業者が存在するか。
 	if _, err := uc.distributorRepo.FindByID(ctx, in.DistributorID); err != nil {
 		return nil, fmt.Errorf("発注先の卸業者が見つかりません: %w", err)
 	}
 
-	order, err := procdomain.NewPurchaseOrder(in.FacilityID, in.DistributorID)
+	// 同じクリニック・卸の下書きが既にあればそれに合算する。無ければ新規の下書きを作る。
+	order, err := uc.purchaseOrderRepo.FindDraftByFacilityAndDistributor(ctx, in.FacilityID, in.DistributorID)
+	isNewDraft := false
 	if err != nil {
-		return nil, err
+		if !errors.Is(err, shareddomain.ErrNotFound) {
+			return nil, err
+		}
+		order, err = procdomain.NewPurchaseOrder(in.FacilityID, in.DistributorID)
+		if err != nil {
+			return nil, err
+		}
+		isNewDraft = true
 	}
 
-	csvLines := make([]PurchaseOrderCsvLine, 0, len(in.Lines))
 	for _, line := range in.Lines {
 		clinicProduct, err := uc.clinicProductRepo.FindByID(ctx, line.ClinicProductID)
 		if err != nil {
@@ -93,35 +97,16 @@ func (uc *CreatePurchaseOrderUseCase) Execute(ctx context.Context, in CreatePurc
 		if err := order.AddLine(line.ClinicProductID, line.Quantity, clinicProduct.UnitPrice()); err != nil {
 			return nil, err
 		}
-
-		// 発注CSVは卸商品コード・商品名（卸側の呼び方）で明細を表現するため、
-		// クリニック商品ではなく解決済みのDistributorProduct側の値を使う。
-		csvLines = append(csvLines, PurchaseOrderCsvLine{
-			DistributorProductCode: distributorProduct.DistributorProductCode(),
-			ProductName:            distributorProduct.Name(),
-			Quantity:               line.Quantity,
-			UnitPrice:              clinicProduct.UnitPrice(),
-		})
 	}
 
-	// 明細0件ならここでエラーになる。1ステップ作成方針のため作成と同時に確定する。
-	if err := order.Confirm(); err != nil {
-		return nil, err
-	}
-
-	facility, err := uc.facilityRepo.FindByID(ctx, in.FacilityID)
-	if err != nil {
-		return nil, fmt.Errorf("発注元クリニックが見つかりません: %w", err)
-	}
-
-	// 発注CSVが卸に届いて初めて「発注確定」と言えるため、CSVアップロードが失敗したら
-	// 発注は永続化しない（確定したのに卸に届いていない、という不整合を避ける）。
-	if err := uc.csvUploader.Upload(ctx, order, facility.Name(), time.Now(), csvLines); err != nil {
-		return nil, fmt.Errorf("発注CSVのアップロードに失敗しました: %w", err)
-	}
-
-	if err := uc.purchaseOrderRepo.Create(ctx, order); err != nil {
-		return nil, err
+	if isNewDraft {
+		if err := uc.purchaseOrderRepo.Create(ctx, order); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := uc.purchaseOrderRepo.Update(ctx, order); err != nil {
+			return nil, err
+		}
 	}
 	return order, nil
 }

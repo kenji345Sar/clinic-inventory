@@ -2,6 +2,7 @@ package procurement
 
 import (
 	"net/http"
+	"time"
 
 	procapp "clinic-inventory/internal/application/procurement"
 	procdomain "clinic-inventory/internal/domain/procurement"
@@ -11,16 +12,22 @@ import (
 
 // Handler は発注コンテキストのHTTP受け口。
 type Handler struct {
-	createOrder       *procapp.CreatePurchaseOrderUseCase
+	saveDraftOrder    *procapp.SaveDraftPurchaseOrderUseCase
+	confirmOrder      *procapp.ConfirmPurchaseOrderUseCase
+	removeDraftOrder  *procapp.RemoveDraftPurchaseOrderUseCase
 	purchaseOrderRepo procdomain.PurchaseOrderRepository
 }
 
 func New(
-	createOrder *procapp.CreatePurchaseOrderUseCase,
+	saveDraftOrder *procapp.SaveDraftPurchaseOrderUseCase,
+	confirmOrder *procapp.ConfirmPurchaseOrderUseCase,
+	removeDraftOrder *procapp.RemoveDraftPurchaseOrderUseCase,
 	purchaseOrderRepo procdomain.PurchaseOrderRepository,
 ) *Handler {
 	return &Handler{
-		createOrder:       createOrder,
+		saveDraftOrder:    saveDraftOrder,
+		confirmOrder:      confirmOrder,
+		removeDraftOrder:  removeDraftOrder,
 		purchaseOrderRepo: purchaseOrderRepo,
 	}
 }
@@ -29,6 +36,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/facilities/{facilityId}/orders", h.postOrder)
 	mux.HandleFunc("GET /api/facilities/{facilityId}/orders", h.listOrders)
 	mux.HandleFunc("GET /api/facilities/{facilityId}/orders/{orderId}", h.getOrder)
+	mux.HandleFunc("POST /api/facilities/{facilityId}/orders/{orderId}/confirm", h.confirmOrderHandler)
+	mux.HandleFunc("DELETE /api/facilities/{facilityId}/orders/{orderId}", h.deleteOrder)
 }
 
 type orderLineResponse struct {
@@ -45,6 +54,7 @@ type purchaseOrderResponse struct {
 	Status        string              `json:"status"`
 	Lines         []orderLineResponse `json:"lines"`
 	TotalAmount   int                 `json:"totalAmount"`
+	ConfirmedAt   *string             `json:"confirmedAt"`
 }
 
 func toPurchaseOrderResponse(o *procdomain.PurchaseOrder) purchaseOrderResponse {
@@ -57,6 +67,11 @@ func toPurchaseOrderResponse(o *procdomain.PurchaseOrder) purchaseOrderResponse 
 			Amount:          l.Amount(),
 		})
 	}
+	var confirmedAt *string
+	if t := o.ConfirmedAt(); t != nil {
+		formatted := t.Format(time.RFC3339)
+		confirmedAt = &formatted
+	}
 	return purchaseOrderResponse{
 		ID:            o.ID().String(),
 		FacilityID:    o.FacilityID().String(),
@@ -64,6 +79,7 @@ func toPurchaseOrderResponse(o *procdomain.PurchaseOrder) purchaseOrderResponse 
 		Status:        string(o.Status()),
 		Lines:         lines,
 		TotalAmount:   o.TotalAmount(),
+		ConfirmedAt:   confirmedAt,
 	}
 }
 
@@ -94,20 +110,20 @@ func (h *Handler) postOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lines := make([]procapp.CreatePurchaseOrderLineInput, 0, len(req.Lines))
+	lines := make([]procapp.SaveDraftPurchaseOrderLineInput, 0, len(req.Lines))
 	for _, l := range req.Lines {
 		clinicProductID, err := httputil.ParseID(l.ClinicProductID)
 		if err != nil {
 			httputil.WriteError(w, err)
 			return
 		}
-		lines = append(lines, procapp.CreatePurchaseOrderLineInput{
+		lines = append(lines, procapp.SaveDraftPurchaseOrderLineInput{
 			ClinicProductID: clinicProductID,
 			Quantity:        l.Quantity,
 		})
 	}
 
-	order, err := h.createOrder.Execute(r.Context(), procapp.CreatePurchaseOrderInput{
+	order, err := h.saveDraftOrder.Execute(r.Context(), procapp.SaveDraftPurchaseOrderInput{
 		FacilityID:    facilityID,
 		DistributorID: distributorID,
 		Lines:         lines,
@@ -116,7 +132,58 @@ func (h *Handler) postOrder(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, err)
 		return
 	}
-	httputil.WriteJSON(w, http.StatusCreated, toPurchaseOrderResponse(order))
+	httputil.WriteJSON(w, http.StatusOK, toPurchaseOrderResponse(order))
+}
+
+func (h *Handler) confirmOrderHandler(w http.ResponseWriter, r *http.Request) {
+	if err := httputil.AuthorizeFacility(r.Context(), r.PathValue("facilityId")); err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	facilityID, err := httputil.ParseID(r.PathValue("facilityId"))
+	if err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	orderID, err := httputil.ParseID(r.PathValue("orderId"))
+	if err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	order, err := h.confirmOrder.Execute(r.Context(), procapp.ConfirmPurchaseOrderInput{
+		FacilityID: facilityID,
+		OrderID:    orderID,
+	})
+	if err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, toPurchaseOrderResponse(order))
+}
+
+func (h *Handler) deleteOrder(w http.ResponseWriter, r *http.Request) {
+	if err := httputil.AuthorizeFacility(r.Context(), r.PathValue("facilityId")); err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	facilityID, err := httputil.ParseID(r.PathValue("facilityId"))
+	if err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	orderID, err := httputil.ParseID(r.PathValue("orderId"))
+	if err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	if err := h.removeDraftOrder.Execute(r.Context(), procapp.RemoveDraftPurchaseOrderInput{
+		FacilityID: facilityID,
+		OrderID:    orderID,
+	}); err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) listOrders(w http.ResponseWriter, r *http.Request) {

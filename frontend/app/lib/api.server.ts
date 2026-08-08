@@ -34,6 +34,9 @@ async function request<T>(
     } | null;
     throw new ApiError(res.status, body?.error ?? `APIエラー (${res.status})`);
   }
+  if (res.status === 204) {
+    return undefined as T;
+  }
   return (await res.json()) as T;
 }
 
@@ -89,6 +92,7 @@ export interface PurchaseOrder {
   status: "draft" | "confirmed";
   lines: PurchaseOrderLine[];
   totalAmount: number;
+  confirmedAt: string | null;
 }
 
 // 各メソッドは第1引数に accessToken を取り、backend への Bearer 認証に使う。
@@ -126,7 +130,8 @@ export const api = {
     }),
   listPurchaseOrders: (accessToken: string, facilityId: string) =>
     request<PurchaseOrder[]>(`/api/facilities/${facilityId}/orders`, accessToken),
-  createPurchaseOrder: (
+  // カートに積む（下書きを新規作成、または既存の下書きに明細を合算する）。
+  saveDraftPurchaseOrder: (
     accessToken: string,
     facilityId: string,
     input: {
@@ -137,5 +142,15 @@ export const api = {
     request<PurchaseOrder>(`/api/facilities/${facilityId}/orders`, accessToken, {
       method: "POST",
       body: JSON.stringify(input),
+    }),
+  confirmPurchaseOrder: (accessToken: string, facilityId: string, orderId: string) =>
+    request<PurchaseOrder>(
+      `/api/facilities/${facilityId}/orders/${orderId}/confirm`,
+      accessToken,
+      { method: "POST" },
+    ),
+  deletePurchaseOrder: (accessToken: string, facilityId: string, orderId: string) =>
+    request<void>(`/api/facilities/${facilityId}/orders/${orderId}`, accessToken, {
+      method: "DELETE",
     }),
 };
