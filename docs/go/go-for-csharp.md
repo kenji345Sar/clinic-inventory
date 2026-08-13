@@ -193,11 +193,11 @@ public class BagsController(
 ```go
 // backend/internal/handler/procurement/handler.go
 type Handler struct {
-	createOrder *procapp.CreatePurchaseOrderUseCase   // 1. UseCaseをフィールドとして持つ
+	saveDraftOrder *procapp.SaveDraftPurchaseOrderUseCase  // 1. UseCaseをフィールドとして持つ
 }
 
-func New(createOrder *procapp.CreatePurchaseOrderUseCase, ...) *Handler {
-	return &Handler{createOrder: createOrder}          // （受け取ってフィールドに入れる）
+func New(saveDraftOrder *procapp.SaveDraftPurchaseOrderUseCase, ...) *Handler {
+	return &Handler{saveDraftOrder: saveDraftOrder}         // （受け取ってフィールドに入れる）
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -205,11 +205,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) postOrder(w http.ResponseWriter, r *http.Request) {
-	order, err := h.createOrder.Execute(r.Context(), ...)  // 2. フィールドのUseCaseを呼ぶ
+	order, err := h.saveDraftOrder.Execute(r.Context(), ...)  // 2. フィールドのUseCaseを呼ぶ
 }
 ```
 
-呼び方はほぼ同じ。C#は`depositBagUseCase.ExecuteAsync(...)`、Goは`h.createOrder.Execute(...)`。
+呼び方はほぼ同じ。C#は`depositBagUseCase.ExecuteAsync(...)`、Goは`h.saveDraftOrder.Execute(...)`。
 どちらも「保持しているUseCaseの`Execute`を呼ぶ」だけ。
 
 ### 「このメソッドはPOST /xxxを処理する」の書き方の違い
@@ -234,8 +234,8 @@ Goには属性が無いので、`Register()`の中に`mux.HandleFunc("POST ...",
 
 ```go
 // backend/cmd/api/main.go — C#のDIコンテナがやっていた「生成して渡す」を手書きしている
-createPurchaseOrder := procapp.NewCreatePurchaseOrderUseCase(purchaseOrderRepo, ...)  // UseCaseを作る
-prochandler.New(createPurchaseOrder, purchaseOrderRepo).Register(protected)           // handlerに渡す
+saveDraftPurchaseOrder := procapp.NewSaveDraftPurchaseOrderUseCase(purchaseOrderRepo, ...)  // UseCaseを作る
+prochandler.New(saveDraftPurchaseOrder, confirmPurchaseOrder, ...).Register(protected)      // handlerに渡す
 ```
 
 C#は「登録さえすれば、あとはフレームワークが実行時に勝手に渡してくれる」。
@@ -243,6 +243,54 @@ Goは「作って渡すコードを`main.go`に自分で書く」。この受け
 
 なので**「このUseCaseはどこで作られて渡されているのか」を知りたくなったら`cmd/api/main.go`を見る**。
 C#と違ってDIコンテナが隠していないので、`main.go`に全部書いてある。
+
+### DIコンテナが無いと、具体的にどの3箇所が変わるか
+
+UseCaseがhandlerに届くまでには①生成②受け渡し③保持の3段がある。C#はこのうち①②が
+コンテナの中で実行時に起きるためコードに現れない。Goは①②が`main.go`に並んで書かれる。
+
+| 段階 | C# (petty-cash) | Go (clinic-inventory) |
+|---|---|---|
+| ① 生成する | コンテナが実行時に生成（書くのは`Program.cs`の`AddScoped<T>()`1行だけ） | `main.go`に`procapp.New...UseCase(...)`と手書き |
+| ② handlerに渡す | コンストラクタ引数に型を書けば自動で注入 | `main.go`で`prochandler.New(...)`の引数に手渡し |
+| ③ handlerが保持する | コンストラクタ引数（primary constructor） | 構造体のフィールド |
+
+`ConfirmPurchaseOrderUseCase`の実物で並べるとこうなる。
+
+```go
+// ① backend/cmd/api/main.go:94 — 依存する4つのリポジトリとS3アップローダを渡して生成
+confirmPurchaseOrder := procapp.NewConfirmPurchaseOrderUseCase(
+	purchaseOrderRepo, distributorProductRepo, clinicProductRepo, facilityRepo, orderCsvUploader)
+
+// ② backend/cmd/api/main.go:102 — handlerのNewに渡す
+prochandler.New(saveDraftPurchaseOrder, confirmPurchaseOrder, removeDraftPurchaseOrder, purchaseOrderRepo).Register(protected)
+
+// ③ backend/internal/handler/procurement/handler.go:16 — フィールドとして保持
+confirmOrder *procapp.ConfirmPurchaseOrderUseCase
+```
+
+### 配線を間違えたときの現れ方の違い
+
+| | C# (petty-cash) | Go (clinic-inventory) |
+|---|---|---|
+| 登録し忘れ | ビルドは通り、実行時に`InvalidOperationException: Unable to resolve service` | `New(...)`の引数が足りずコンパイルエラー |
+| UseCaseの依存を1つ増やしたとき | コンストラクタに1行足すだけ（登録済みなら`Program.cs`は変更不要） | `New...UseCase(...)`の呼び出し側（`main.go`）も直す必要がある |
+
+C#は「登録さえ済んでいれば追加の依存はコンテナが解決するが、登録漏れは動かすまで分からない」。
+Goは「依存を増やすたび`main.go`を直す手間がかかるが、直し忘れはコンパイルが通らない」。
+
+### 配線の探し方
+
+Goには「コンテナの中」に相当する場所が無いので、UseCaseの**型名でgrepすると配線の全体が出る**。
+出てくるのは必ず「定義」「①生成（`main.go`）」「③フィールド（`handler.go`）」の3種類。
+
+```
+grep -rn "ConfirmPurchaseOrderUseCase" backend/
+```
+
+C#で`GetVendorDashboardUseCase`をF12で追うとコンストラクタ引数までしか辿れず、
+「誰がこれを生成しているのか」はコンテナの中なのでコードに無い。Goはその1箇所が
+必ず`main.go`にあるので、grepの結果がそのまま答えになる。
 
 ---
 
@@ -291,7 +339,7 @@ Goは**同じメソッドを揃えていれば自動的にインターフェー�
 
 **ユースケースはインターフェースだけを持つ（C#と同じ）**
 ```go
-// backend/internal/application/procurement/create_purchase_order.go:22
+// backend/internal/application/procurement/save_draft_purchase_order.go:24
 purchaseOrderRepo  procdomain.PurchaseOrderRepository  // ← domain層のインターフェース。gorm実装のことは知らない
 ```
 
