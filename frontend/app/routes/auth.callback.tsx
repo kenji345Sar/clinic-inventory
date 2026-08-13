@@ -23,6 +23,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const user = decodeIdToken(tokens.id_token);
 
   session.set("accessToken", tokens.access_token);
+  // アクセストークン自体の有効期限。Cookieの寿命(8時間)とは別に切れるので、
+  // requireAuth はこちらを見て期限切れなら再ログインさせる。
+  session.set("expiresAt", Date.now() + tokens.expires_in * 1000);
   session.set("user", user);
   session.unset("oauthState");
 

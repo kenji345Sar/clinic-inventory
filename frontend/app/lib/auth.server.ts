@@ -86,7 +86,11 @@ export async function requireAuth(
   const session = await getSession(request.headers.get("Cookie"));
   const accessToken = session.get("accessToken") as string | undefined;
   const user = session.get("user") as SessionUser | undefined;
-  if (!accessToken || !user) {
+  const expiresAt = session.get("expiresAt") as number | undefined;
+  // アクセストークンが期限切れ(または期限情報のない旧形式セッション)なら、
+  // 期限切れトークンをbackendに送って401で落ちる前に再ログインへ回す。
+  // 60秒のマージンは、この後のAPI呼び出し中に期限を跨ぐのを避けるため。
+  if (!accessToken || !user || !expiresAt || Date.now() >= expiresAt - 60_000) {
     throw redirect("/login");
   }
   return { accessToken, user };
