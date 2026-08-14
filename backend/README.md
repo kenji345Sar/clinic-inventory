@@ -78,6 +78,18 @@ petty-cashと同じ**レイヤー最上位**の構成。最上位がレイヤー
 
 HTTP層のパッケージ名は、`interface`がGoの予約語のため`handler`とした。書き込みはユースケース経由、一覧などの単純な読み取りはハンドラからリポジトリを直接使う。
 
+### レイヤー間の依存の向き（依存性の逆転）
+
+リポジトリのインターフェースは`domain/`に置き、gormを使った実装は`infrastructure/`に置く
+（例: [domain/procurement/repository.go](internal/domain/procurement/repository.go) と
+[infrastructure/procurement/purchase_order_repository.go](internal/infrastructure/procurement/purchase_order_repository.go)）。
+
+domain/applicationはインターフェースだけを見ていて、gormもDBも知らない。逆にinfrastructureが
+domainの決めたインターフェースに合わせる。この「上位レイヤーがインターフェースを所有し、
+下位レイヤーがそれに従う」向きが依存性の逆転で、DB実装を差し替えてもdomain/applicationは変更不要になる。
+実際にどの実装を差し込むかは`cmd/api/main.go`で決めている（C#のDIコンテナ登録に相当。
+書き方の対応は[docs/go/go-for-csharp.md 8-9章](../docs/go/go-for-csharp.md)）。
+
 ```
 internal/
   domain/                        … 業務ルールの在り処（主役）
