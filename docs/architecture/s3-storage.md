@@ -8,7 +8,7 @@
 
 ## 1. 基本の考え方
 
-- 発注確定時にバックエンドがCSVを組み立て、S3へアップロードする(コード側は[purchase_order_csv_uploader.go](../../backend/internal/infrastructure/procurement/purchase_order_csv_uploader.go))。ユースケースからAWS SDKの`PutObject`に届くまでのコードの追い方は[request-to-sql-flow.md 10-6](../go/request-to-sql-flow.md)にまとめてある。
+- 発注確定時にバックエンドがCSVを組み立て、S3へアップロードする(コード側は[purchase_order_csv_uploader.go](../../backend/internal/infrastructure/procurement/purchase_order_csv_uploader.go))。ユースケースからAWS SDKの`PutObject`に届くまでのコードの追い方は[request-to-sql-flow.md 3-6](../go/request-to-sql-flow.md)にまとめてある。
 - バックエンドは**IAMユーザーの発行したアクセスキー**でS3に認証する(サーバーがAWS上で動いていないため、IAMロールではなくアクセスキー方式)。
 - 権限は最小限(このバケットへの`s3:PutObject`のみ)に絞り、他のS3操作(削除・一覧取得・他バケットへのアクセス)はできないようにしている。
 

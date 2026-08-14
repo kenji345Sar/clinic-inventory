@@ -15,7 +15,7 @@ import (
 // ConfirmPurchaseOrderUseCase はカート（下書き）に積んだ発注を確定し、卸へ発注CSVを送る。
 //
 // 「発注CSVが卸に届いて初めて確定と言える」というルールのため、CSVアップロードが失敗したら
-// 確定状態を永続化しない（docs/go/request-to-sql-flow.md §10）。
+// 確定状態を永続化しない（docs/go/request-to-sql-flow.md §3-5）。
 type ConfirmPurchaseOrderUseCase struct {
 	purchaseOrderRepo      procdomain.PurchaseOrderRepository
 	distributorProductRepo distdomain.DistributorProductRepository
