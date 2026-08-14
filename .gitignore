@@ -3,6 +3,8 @@ backend/bin/
 *.exe
 *.test
 *.out
+go.work
+go.work.sum
 
 # Node
 node_modules/
