@@ -38,6 +38,7 @@ type RegisterClinicProductInput struct {
 }
 
 func (uc *RegisterClinicProductUseCase) Execute(ctx context.Context, in RegisterClinicProductInput) (*proddomain.ClinicProduct, error) {
+	// 手順1: 紐付け先の卸商品が実在し、廃盤でないことを確認する。
 	distributorProduct, err := uc.distributorProductRepo.FindByID(ctx, in.DistributorProductID)
 	if err != nil {
 		return nil, fmt.Errorf("紐付け先の卸商品が見つかりません: %w", err)
@@ -46,7 +47,7 @@ func (uc *RegisterClinicProductUseCase) Execute(ctx context.Context, in Register
 		return nil, fmt.Errorf("卸商品 %s は廃盤のため登録できません", distributorProduct.Name())
 	}
 
-	// 同一クリニック内での商品コードの一意性チェック。
+	// 手順2: 同一クリニック内での商品コードの一意性チェック。
 	// 同時登録の競合はDB側のユニーク制約が最終防衛線となる。
 	exists, err := uc.clinicProductRepo.ExistsByFacilityAndCode(ctx, in.FacilityID, in.ProductCode)
 	if err != nil {
@@ -56,6 +57,7 @@ func (uc *RegisterClinicProductUseCase) Execute(ctx context.Context, in Register
 		return nil, fmt.Errorf("商品コード %s はこのクリニックで既に使われています: %w", in.ProductCode, shareddomain.ErrConflict)
 	}
 
+	// 手順3: 未指定の項目（商品名・単価・JAN）は卸商品の値を継承してクリニック商品を組み立てる。
 	name := in.Name
 	if name == "" {
 		name = distributorProduct.Name()
@@ -80,6 +82,7 @@ func (uc *RegisterClinicProductUseCase) Execute(ctx context.Context, in Register
 		product.SetJANCode(janCode)
 	}
 
+	// 手順4: DBに保存する。
 	if err := uc.clinicProductRepo.Create(ctx, product); err != nil {
 		return nil, err
 	}

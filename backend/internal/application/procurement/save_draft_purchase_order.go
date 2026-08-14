@@ -53,12 +53,12 @@ type SaveDraftPurchaseOrderInput struct {
 }
 
 func (uc *SaveDraftPurchaseOrderUseCase) Execute(ctx context.Context, in SaveDraftPurchaseOrderInput) (*procdomain.PurchaseOrder, error) {
-	// 発注先の卸業者が存在するか。
+	// 手順1: 発注先の卸業者が実在するか確認する。
 	if _, err := uc.distributorRepo.FindByID(ctx, in.DistributorID); err != nil {
 		return nil, fmt.Errorf("発注先の卸業者が見つかりません: %w", err)
 	}
 
-	// 同じクリニック・卸の下書きが既にあればそれに合算する。無ければ新規の下書きを作る。
+	// 手順2: 同じクリニック・卸の下書きが既にあればそれに合算する。無ければ新規の下書きを作る。
 	order, err := uc.purchaseOrderRepo.FindDraftByFacilityAndDistributor(ctx, in.FacilityID, in.DistributorID)
 	isNewDraft := false
 	if err != nil {
@@ -72,6 +72,7 @@ func (uc *SaveDraftPurchaseOrderUseCase) Execute(ctx context.Context, in SaveDra
 		isNewDraft = true
 	}
 
+	// 手順3: 明細ごとに検証してから下書きに積む。
 	for _, line := range in.Lines {
 		clinicProduct, err := uc.clinicProductRepo.FindByID(ctx, line.ClinicProductID)
 		if err != nil {
@@ -99,6 +100,7 @@ func (uc *SaveDraftPurchaseOrderUseCase) Execute(ctx context.Context, in SaveDra
 		}
 	}
 
+	// 手順4: 新規の下書きならINSERT、既存への合算ならUPDATEで永続化する。
 	if isNewDraft {
 		if err := uc.purchaseOrderRepo.Create(ctx, order); err != nil {
 			return nil, err

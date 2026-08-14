@@ -15,10 +15,12 @@ func NewCreateCorporationUseCase(corporationRepo orgdomain.CorporationRepository
 }
 
 func (uc *CreateCorporationUseCase) Execute(ctx context.Context, name string) (*orgdomain.Corporation, error) {
+	// 手順1: 法人を組み立てる（名前の検証はドメイン側）。
 	corporation, err := orgdomain.NewCorporation(name)
 	if err != nil {
 		return nil, err
 	}
+	// 手順2: DBに保存する。
 	if err := uc.corporationRepo.Create(ctx, corporation); err != nil {
 		return nil, err
 	}
