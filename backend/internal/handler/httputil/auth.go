@@ -47,6 +47,10 @@ func RequireAuth(next http.Handler) http.Handler {
 		issuerURL.String(),
 		[]string{audience},
 		validator.WithCustomClaims(func() validator.CustomClaims { return &AppClaims{} }),
+		// 既定では時刻のずれを一切許容しないため、Auth0の時計とこのサーバーの時計が
+		// 1秒ずれているだけで発行直後のトークンが「未来に発行された(iat)」として弾かれる。
+		// 1分の許容を入れて、正常なログインが時計の誤差で失敗しないようにする。
+		validator.WithAllowedClockSkew(time.Minute),
 	)
 	if err != nil {
 		log.Fatalf("[auth] JWTバリデータの初期化に失敗: %v", err)
