@@ -31,6 +31,10 @@ createdb -h localhost -U "$(whoami)" clinic_inventory
 
 ## 起動
 
+`go run` は「ビルドした実行ファイルを子プロセスとして動かす」ため、`ps` では親子2つのプロセスが見える。
+停止し損ねて8080が空かない・古いプロセスが生き残る、といった場面の切り分けは
+[../docs/dev/process-and-port.md](../docs/dev/process-and-port.md) を参照。
+
 ```bash
 # APIサーバー（デフォルト :8080。PORTで変更可）
 CGO_ENABLED=0 go run ./cmd/api
