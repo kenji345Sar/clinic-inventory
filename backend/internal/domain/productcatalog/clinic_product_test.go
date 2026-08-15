@@ -57,10 +57,18 @@ func TestNewClinicProduct(t *testing.T) {
 		}
 	})
 
-	t.Run("単価が0以下だとエラー", func(t *testing.T) {
-		if _, err := proddomain.NewClinicProduct(facilityID, "C-0001", "抗生剤100mg", distributorProductID, 0, 10); err == nil {
-			t.Fatal("expected error, got nil")
+	// 単価が分からない卸があるため0を許容する。その場合は後日、卸から届く受注結果の単価で更新する。
+	t.Run("単価0は登録できる（単価未確定）", func(t *testing.T) {
+		p, err := proddomain.NewClinicProduct(facilityID, "C-0001", "抗生剤100mg", distributorProductID, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
+		if p.UnitPrice() != 0 {
+			t.Errorf("UnitPrice() = %d, want 0", p.UnitPrice())
+		}
+	})
+
+	t.Run("単価が負だとエラー", func(t *testing.T) {
 		if _, err := proddomain.NewClinicProduct(facilityID, "C-0001", "抗生剤100mg", distributorProductID, -1, 10); err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -111,12 +119,12 @@ func TestNewClinicProduct(t *testing.T) {
 		}
 	})
 
-	t.Run("ChangeUnitPriceに0以下を渡すとエラー", func(t *testing.T) {
+	t.Run("ChangeUnitPriceに負の値を渡すとエラー", func(t *testing.T) {
 		p, err := proddomain.NewClinicProduct(facilityID, "C-0001", "抗生剤100mg", distributorProductID, 1200, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if err := p.ChangeUnitPrice(0); err == nil {
+		if err := p.ChangeUnitPrice(-1); err == nil {
 			t.Fatal("expected error, got nil")
 		}
 		if p.UnitPrice() != 1200 {

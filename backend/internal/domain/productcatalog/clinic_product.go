@@ -21,8 +21,11 @@ type ClinicProduct struct {
 	name                 string
 	distributorProductID shareddomain.ID
 	janCode              string // 任意。JANが無い商品は名称等で検索する運用
-	unitPrice            int    // 仕入単価（税抜・円）。卸商品の標準単価をデフォルトに、医院別単価があれば上書き
-	reorderPoint         int
+	// 仕入単価（税抜・円）。卸商品の標準単価または医院別単価を初期値にする。
+	// 単価が分からない卸もあるため0を許容し、その場合は後から受注結果の単価で更新する運用
+	// （docs/architecture/distributor-catalog-import.md 3章）。
+	unitPrice    int
+	reorderPoint int
 }
 
 func NewClinicProduct(facilityID shareddomain.ID, productCode, name string, distributorProductID shareddomain.ID, unitPrice, reorderPoint int) (*ClinicProduct, error) {
@@ -38,8 +41,8 @@ func NewClinicProduct(facilityID shareddomain.ID, productCode, name string, dist
 	if distributorProductID.IsZero() {
 		return nil, errors.New("卸商品への紐付けは必須です")
 	}
-	if unitPrice <= 0 {
-		return nil, errors.New("単価は1円以上で指定してください")
+	if unitPrice < 0 {
+		return nil, errors.New("単価は0以上で指定してください")
 	}
 	if reorderPoint < 0 {
 		return nil, errors.New("発注点は0以上で指定してください")
@@ -69,9 +72,10 @@ func (p *ClinicProduct) SetJANCode(code string) {
 }
 
 // ChangeUnitPrice は仕入単価を変更する（医院別単価の設定・更新）。
+// 単価未確定の商品を0のまま登録できるため、0への変更も許容する。
 func (p *ClinicProduct) ChangeUnitPrice(unitPrice int) error {
-	if unitPrice <= 0 {
-		return errors.New("単価は1円以上で指定してください")
+	if unitPrice < 0 {
+		return errors.New("単価は0以上で指定してください")
 	}
 	p.unitPrice = unitPrice
 	return nil

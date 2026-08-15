@@ -23,7 +23,9 @@ type RegisterDistributorProductInput struct {
 	VendorName             string
 	VendorProductCode      string // 任意
 	JANCode                string // 任意
-	UnitPrice              int    // 標準単価（税抜・円・必須）
+	// 標準単価（税抜・円）。nilは「卸が単価を公表していない」を表す
+	// （docs/architecture/distributor-catalog-import.md 4章）。
+	UnitPrice *int
 }
 
 func (uc *RegisterDistributorProductUseCase) Execute(ctx context.Context, in RegisterDistributorProductInput) (*distdomain.DistributorProduct, error) {

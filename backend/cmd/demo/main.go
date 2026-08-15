@@ -36,6 +36,7 @@ func main() {
 		&orginfra.FacilityModel{},
 		&distinfra.DistributorModel{},
 		&distinfra.DistributorProductModel{},
+		&distinfra.DistributorProductFacilityPriceModel{},
 		&prodinfra.ClinicProductModel{},
 	); err != nil {
 		log.Fatalf("failed to migrate: %v", err)
@@ -88,7 +89,7 @@ func runDistributorCatalogDemo(ctx context.Context, db *gorm.DB) shareddomain.ID
 	createDistributor := distapp.NewCreateDistributorUseCase(distributorRepo)
 	registerProduct := distapp.NewRegisterDistributorProductUseCase(productRepo)
 
-	distributor, err := createDistributor.Execute(ctx, "サンプル医薬品卸")
+	distributor, err := createDistributor.Execute(ctx, distapp.CreateDistributorInput{Code: "sample-pharma", Name: "サンプル医薬品卸"})
 	if err != nil {
 		log.Fatalf("failed to create distributor: %v", err)
 	}
@@ -144,7 +145,9 @@ func runProductCatalogDemo(ctx context.Context, db *gorm.DB, facilityID, distrib
 	clinicProductRepo := prodinfra.NewClinicProductRepository(db)
 	distributorProductRepo := distinfra.NewDistributorProductRepository(db)
 
-	registerClinicProduct := prodapp.NewRegisterClinicProductUseCase(clinicProductRepo, distributorProductRepo)
+	facilityPriceRepo := distinfra.NewFacilityPriceRepository(db)
+
+	registerClinicProduct := prodapp.NewRegisterClinicProductUseCase(clinicProductRepo, distributorProductRepo, facilityPriceRepo)
 
 	// 商品名・JANを指定せず登録 → 卸商品から引き継がれる
 	cp, err := registerClinicProduct.Execute(ctx, prodapp.RegisterClinicProductInput{

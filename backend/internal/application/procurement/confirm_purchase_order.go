@@ -18,6 +18,7 @@ import (
 // 確定状態を永続化しない（docs/go/request-to-sql-flow.md §3-5）。
 type ConfirmPurchaseOrderUseCase struct {
 	purchaseOrderRepo      procdomain.PurchaseOrderRepository
+	distributorRepo        distdomain.DistributorRepository
 	distributorProductRepo distdomain.DistributorProductRepository
 	clinicProductRepo      proddomain.ClinicProductRepository
 	facilityRepo           orgdomain.FacilityRepository
@@ -26,6 +27,7 @@ type ConfirmPurchaseOrderUseCase struct {
 
 func NewConfirmPurchaseOrderUseCase(
 	purchaseOrderRepo procdomain.PurchaseOrderRepository,
+	distributorRepo distdomain.DistributorRepository,
 	distributorProductRepo distdomain.DistributorProductRepository,
 	clinicProductRepo proddomain.ClinicProductRepository,
 	facilityRepo orgdomain.FacilityRepository,
@@ -33,6 +35,7 @@ func NewConfirmPurchaseOrderUseCase(
 ) *ConfirmPurchaseOrderUseCase {
 	return &ConfirmPurchaseOrderUseCase{
 		purchaseOrderRepo:      purchaseOrderRepo,
+		distributorRepo:        distributorRepo,
 		distributorProductRepo: distributorProductRepo,
 		clinicProductRepo:      clinicProductRepo,
 		facilityRepo:           facilityRepo,
@@ -90,7 +93,12 @@ func (uc *ConfirmPurchaseOrderUseCase) Execute(ctx context.Context, in ConfirmPu
 	if err != nil {
 		return nil, fmt.Errorf("発注元クリニックが見つかりません: %w", err)
 	}
-	if err := uc.csvUploader.Upload(ctx, order, facility.Name(), confirmedAt, csvLines); err != nil {
+	// S3のフォルダは卸コードで分ける(orders/{卸コード}/...)ため、発注先の卸を解決する。
+	distributor, err := uc.distributorRepo.FindByID(ctx, order.DistributorID())
+	if err != nil {
+		return nil, fmt.Errorf("発注先の卸業者が見つかりません: %w", err)
+	}
+	if err := uc.csvUploader.Upload(ctx, order, distributor.Code(), facility.Name(), confirmedAt, csvLines); err != nil {
 		return nil, fmt.Errorf("発注CSVのアップロードに失敗しました: %w", err)
 	}
 

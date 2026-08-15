@@ -45,8 +45,17 @@ export interface DistributorProduct {
   vendorName: string;
   vendorProductCode: string;
   janCode: string;
-  unitPrice: number;
+  /** 標準単価(税抜・円)。nullは全医院共通の定価が無いことを表す(医院別単価の卸・単価未提供の卸) */
+  unitPrice: number | null;
+  /** 医院別単価が設定されている医院数。0なら医院別単価は無い */
+  facilityPriceCount: number;
   discontinued: boolean;
+}
+
+export interface FacilityPrice {
+  facilityId: string;
+  facilityName: string;
+  unitPrice: number;
 }
 
 export interface OrderLine {
@@ -85,12 +94,18 @@ export const api = {
       vendorName: string;
       vendorProductCode?: string;
       janCode?: string;
-      unitPrice: number;
+      /** nullは単価を公表しないことを表す */
+      unitPrice: number | null;
     },
   ) =>
     request<DistributorProduct>(
       `/api/portal/distributors/${distributorId}/products`,
       { method: "POST", body: JSON.stringify(input) },
+    ),
+  // 1商品の医院別単価の内訳。一覧では件数だけ返るため、選択時にこれを取る。
+  listFacilityPrices: (distributorId: string, productId: string) =>
+    request<FacilityPrice[]>(
+      `/api/portal/distributors/${distributorId}/products/${productId}/facility-prices`,
     ),
   listOrders: (distributorId: string) =>
     request<Order[]>(`/api/portal/distributors/${distributorId}/orders`),

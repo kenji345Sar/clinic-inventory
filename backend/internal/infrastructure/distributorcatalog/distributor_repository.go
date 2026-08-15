@@ -23,6 +23,7 @@ func NewDistributorRepository(db *gorm.DB) *DistributorRepository {
 func (r *DistributorRepository) Create(ctx context.Context, distributor *distdomain.Distributor) error {
 	model := DistributorModel{
 		ID:   uuid.UUID(distributor.ID()),
+		Code: distributor.Code(),
 		Name: distributor.Name(),
 	}
 	return r.db.WithContext(ctx).Create(&model).Error
@@ -36,7 +37,19 @@ func (r *DistributorRepository) FindByID(ctx context.Context, id shareddomain.ID
 		}
 		return nil, err
 	}
-	return distdomain.ReconstructDistributor(shareddomain.ID(model.ID), model.Name), nil
+	return distdomain.ReconstructDistributor(shareddomain.ID(model.ID), model.Code, model.Name), nil
+}
+
+func (r *DistributorRepository) ExistsByCode(ctx context.Context, code string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&DistributorModel{}).
+		Where("code = ?", code).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (r *DistributorRepository) FindAll(ctx context.Context) ([]*distdomain.Distributor, error) {
@@ -46,7 +59,7 @@ func (r *DistributorRepository) FindAll(ctx context.Context) ([]*distdomain.Dist
 	}
 	distributors := make([]*distdomain.Distributor, 0, len(models))
 	for _, model := range models {
-		distributors = append(distributors, distdomain.ReconstructDistributor(shareddomain.ID(model.ID), model.Name))
+		distributors = append(distributors, distdomain.ReconstructDistributor(shareddomain.ID(model.ID), model.Code, model.Name))
 	}
 	return distributors, nil
 }

@@ -4,8 +4,10 @@ import "github.com/google/uuid"
 
 // DistributorModel はDistributorの永続化用モデル（gorm）。
 type DistributorModel struct {
-	ID   uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Name string    `gorm:"not null"`
+	ID uuid.UUID `gorm:"type:uuid;primaryKey"`
+	// Code は卸コード。S3のフォルダ名(orders/{code}/, catalogs/{code}/)に使うため一意。
+	Code string `gorm:"not null;uniqueIndex"`
+	Name string `gorm:"not null"`
 }
 
 func (DistributorModel) TableName() string { return "distributors" }
@@ -21,8 +23,23 @@ type DistributorProductModel struct {
 	VendorName             string    `gorm:"not null"`
 	VendorProductCode      string
 	JANCode                string `gorm:"column:jan_code;index"`
-	UnitPrice              int    `gorm:"not null;default:0"` // 標準単価（税抜・円）
-	Discontinued           bool   `gorm:"not null;default:false"`
+	// 標準単価（税抜・円）。NULLは「卸が単価を公表していない」を表す。
+	// 0円との区別が必要なためポインタ（docs/architecture/distributor-catalog-import.md 4章）。
+	UnitPrice    *int `gorm:""`
+	Discontinued bool `gorm:"not null;default:false"`
 }
 
 func (DistributorProductModel) TableName() string { return "distributor_products" }
+
+// DistributorProductFacilityPriceModel は医院別単価の永続化用モデル（gorm）。
+// 同一性が(卸商品, クリニック)の組で決まるため、この2列を複合主キーにしている
+// （＝同じ組が二重に登録されない）。
+type DistributorProductFacilityPriceModel struct {
+	DistributorProductID uuid.UUID `gorm:"type:uuid;primaryKey"`
+	FacilityID           uuid.UUID `gorm:"type:uuid;primaryKey"`
+	UnitPrice            int       `gorm:"not null"`
+}
+
+func (DistributorProductFacilityPriceModel) TableName() string {
+	return "distributor_product_facility_prices"
+}

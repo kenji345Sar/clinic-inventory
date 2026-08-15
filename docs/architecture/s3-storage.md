@@ -2,7 +2,7 @@
 
 このドキュメントは、発注CSVをアップロードするS3バケット・IAMユーザーをなぜ・どう構成したか、および今後の運用手順をまとめる。CSV連携全体の設計意図は[domain-rules.md「卸連携CSV基盤」](domain-rules.md#卸連携csv基盤distributorcsvingestionコンテキスト)を参照。
 
-最終更新: 2026-08-02
+最終更新: 2026-08-14
 
 ---
 
@@ -10,7 +10,7 @@
 
 - 発注確定時にバックエンドがCSVを組み立て、S3へアップロードする(コード側は[purchase_order_csv_uploader.go](../../backend/internal/infrastructure/procurement/purchase_order_csv_uploader.go))。ユースケースからAWS SDKの`PutObject`に届くまでのコードの追い方は[request-to-sql-flow.md 3-6](../go/request-to-sql-flow.md)にまとめてある。
 - バックエンドは**IAMユーザーの発行したアクセスキー**でS3に認証する(サーバーがAWS上で動いていないため、IAMロールではなくアクセスキー方式)。
-- 権限は最小限(このバケットへの`s3:PutObject`のみ)に絞り、他のS3操作(削除・一覧取得・他バケットへのアクセス)はできないようにしている。
+- 権限は最小限に絞っている。現在許可しているのは、このバケットへの`s3:PutObject`・`s3:GetObject`と、`catalogs/`配下に限定した`s3:ListBucket`だけ(削除・他バケットへのアクセスは不可)。
 
 ---
 
@@ -61,10 +61,60 @@ AWSコンソール(アカウント `<AWS_ACCOUNT_ID>`、リージョン `ap-nort
 ## 3. S3キーの命名規則
 
 ```
-orders/{distributorId}/{facilityId}/{orderId}.csv
+orders/{卸コード}/{facilityId}/{orderId}.csv   ← 発注CSV(こちらが書く)
+catalogs/{卸コード}/{任意のファイル名}.csv      ← 商品マスタCSV(卸が置き、こちらが読む)
 ```
 
+フォルダ名にはUUIDではなく**卸コード**(`distributors.code`。例: `oroshi-b`)を使う。卸業者自身に「あなたのフォルダはここです」と案内する場面で、人が読める識別子である必要があるため。コードは小文字英数字とハイフンに制限している(URLエンコードや大文字小文字の扱いで事故らないようにするため)。
+
 卸業者ごとにフォルダ(プレフィックス)を分けている。将来、卸業者側にS3への読み取り権限を渡す場合は、このプレフィックス単位でIAMポリシーを分ければ「自社宛のフォルダしか見えない」テナント分離ができる(現時点では卸側へのアクセス権限はまだ設定していない)。
+
+商品マスタCSVも同じ規約にしているため、**どの卸のCSVかは中身ではなく置かれた場所で決まる**。商品マスタ側から見た設計は[distributor-catalog-import.md](distributor-catalog-import.md)、取り込み処理そのものは別リポジトリ`clinic-inventory-csv-functions`の`docs/design.md`を参照。
+
+---
+
+## 3-1. 商品マスタCSVの取り込みに必要な権限追加(2026-08-14 実施済み)
+
+取り込みバッチ(別リポジトリ`clinic-inventory-csv-functions`)は`catalogs/`配下を一覧して各CSVを読むため、当初の`s3:PutObject`のみのポリシーでは`AccessDenied`になっていた。AWSコンソールでIAMユーザー`clinic-inventory-backend`のインラインポリシー`clinic-inventory-backend-s3-orders`を以下に差し替え済み。
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": "arn:aws:s3:::clinic-inventory-orders-<AWS_ACCOUNT_ID>/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::clinic-inventory-orders-<AWS_ACCOUNT_ID>",
+      "Condition": { "StringLike": { "s3:prefix": ["catalogs/*"] } }
+    }
+  ]
+}
+```
+
+- `GetObject`/`PutObject`はバケット内のオブジェクトが対象なので`/*`付き、`ListBucket`はバケット自体が対象なので`/*`無し(AWSの仕様上この2つはリソースの書き方が違う)。
+- 一覧は`catalogs/`配下だけに絞っている。取り込み処理はそこしか見ないため、発注CSVの一覧は許可しない(最小権限)。
+
+### 差し替えの手順(AWSコンソール)
+
+1. IAMコンソールを開く → 左メニュー「ユーザー」→ **`clinic-inventory-backend`** をクリック
+   （直リンク: `https://console.aws.amazon.com/iam/home#/users/clinic-inventory-backend`）
+2. 「許可」タブ → 許可ポリシーの一覧にある **`clinic-inventory-backend-s3-orders`**（種類: インライン）の行を開く
+3. 「編集」→ エディタを **JSON** タブに切り替える
+4. 中身を全選択して削除し、上のJSONを貼り付ける
+5. 「次へ」→ 内容を確認して「変更を保存」
+6. 反映は即時。ターミナルで確認する:
+   ```bash
+   cd backend && set -a && . ./.env && set +a
+   aws s3api list-objects-v2 --bucket "$S3_BUCKET_ORDERS" --prefix catalogs/ --max-items 5
+   ```
+   `AccessDenied`が消え、オブジェクトの一覧が返れば成功。
+
+> IAMユーザー自体の作成やアクセスキーの発行は不要(2章で実施済み)。**既存のポリシーの中身を差し替えるだけ**。
 
 ---
 
@@ -76,7 +126,7 @@ orders/{distributorId}/{facilityId}/{orderId}.csv
 3. 新しいアクセスキーを発行し、`backend/.env`を更新
 
 ### 権限が足りないエラーが出た場合(`AccessDenied`)
-- 現在のポリシーは`s3:PutObject`のみ許可。CSVの読み取り(`GetObject`)や一覧取得(`ListBucket`)が必要な機能を追加する場合は、上記インラインポリシーに`Action`を追記する(必要な操作だけを都度足す方針。最初から広く許可しない)。
+- 現在許可しているのは`s3:PutObject`・`s3:GetObject`と、`catalogs/`配下限定の`s3:ListBucket`(3-1章)。他の操作(削除・`catalogs/`以外の一覧)が必要な機能を追加する場合は、上記インラインポリシーに`Action`を追記する(必要な操作だけを都度足す方針。最初から広く許可しない)。
 
 ### 本番環境を分ける場合
 - 開発用(`clinic-inventory-orders-<AWS_ACCOUNT_ID>`)とは別に、本番用バケット・IAMユーザーを新規に作成する(同じ手順を繰り返す)。バケット名がアカウントIDベースのため、本番が別AWSアカウントなら重複の心配はない。
@@ -87,7 +137,7 @@ orders/{distributorId}/{facilityId}/{orderId}.csv
 ## 5. よくある疑問
 
 - **Q. なぜS3の「フォルダ」を事前に作らなかった?**
-  A. S3はディレクトリ構造を持たないフラットなキーバリューストアのため、フォルダを事前に作る操作は存在しない。`orders/{distributorId}/...`というキーでオブジェクトをアップロードした瞬間に、コンソール上「フォルダができた」ように見えるだけ。
+  A. S3はディレクトリ構造を持たないフラットなキーバリューストアのため、フォルダを事前に作る操作は存在しない。`orders/{卸コード}/...`というキーでオブジェクトをアップロードした瞬間に、コンソール上「フォルダができた」ように見えるだけ。
 
 - **Q. IAMユーザーではなくIAMロールにすべきでは?**
   A. 理想はロールだが、ロールはAWSのコンピューティングサービス(EC2/ECS/Lambda等)上で動くリソースに付与する仕組み。現状バックエンドはローカル/任意のサーバーで動かす想定のため、アクセスキー方式のIAMユーザーにしている。AWS上にデプロイする段階でロールへの切り替えを検討する(上記4章参照)。

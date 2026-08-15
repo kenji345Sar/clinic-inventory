@@ -61,7 +61,10 @@ export interface DistributorProduct {
   vendorName: string;
   vendorProductCode: string;
   janCode: string;
-  unitPrice: number;
+  /** 卸の標準単価(税抜・円)。nullは卸が単価を公表していないことを表す */
+  unitPrice: number | null;
+  /** そのクリニック向けの単価(医院ごとに単価を決めている卸)。設定が無ければnull */
+  facilityUnitPrice: number | null;
   discontinued: boolean;
 }
 
@@ -102,9 +105,15 @@ export const api = {
     request<Facility[]>("/api/facilities", accessToken),
   listDistributors: (accessToken: string) =>
     request<Distributor[]>("/api/distributors", accessToken),
-  listDistributorProducts: (accessToken: string, distributorId: string) =>
+  // facilityId を渡すと、そのクリニック向けの医院別単価(facilityUnitPrice)も返る。
+  listDistributorProducts: (
+    accessToken: string,
+    distributorId: string,
+    facilityId?: string,
+  ) =>
     request<DistributorProduct[]>(
-      `/api/distributors/${distributorId}/products`,
+      `/api/distributors/${distributorId}/products` +
+        (facilityId ? `?facilityId=${facilityId}` : ""),
       accessToken,
     ),
   listClinicProducts: (accessToken: string, facilityId: string) =>

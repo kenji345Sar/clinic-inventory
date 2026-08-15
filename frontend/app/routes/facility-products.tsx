@@ -6,6 +6,12 @@ import type { DistributorProduct } from "../lib/api.server";
 import { requireAuth } from "../lib/auth.server";
 import { formatYen } from "../lib/money";
 
+// 仕入単価は「自院向けの医院別単価 → 卸の標準単価」の順で決まる。
+// どちらも無い卸（単価が分からない卸）は0とし、後日受注結果の単価で更新する運用。
+function purchasePriceOf(p: DistributorProduct): number {
+  return p.facilityUnitPrice ?? p.unitPrice ?? 0;
+}
+
 export function meta() {
   return [{ title: "商品マスタ | クリニック在庫管理" }];
 }
@@ -29,7 +35,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   const distributorProducts = distributorId
-    ? await api.listDistributorProducts(accessToken, distributorId)
+    ? await api.listDistributorProducts(accessToken, distributorId, params.facilityId)
     : [];
 
   return { facility, clinicProducts, distributors, distributorId, distributorProducts };
@@ -143,7 +149,7 @@ export default function FacilityProducts({
                     >
                       <span className="font-medium">{p.name}</span>
                       <span className="ml-2 text-sm text-gray-700">
-                        {formatYen(p.unitPrice)}
+                        {formatYen(purchasePriceOf(p))}
                       </span>
                       {p.discontinued && (
                         <span className="ml-2 text-xs text-red-600">廃盤</span>
@@ -212,13 +218,12 @@ export default function FacilityProducts({
                 />
               </label>
               <label className="block text-sm text-gray-600">
-                単価（税抜・円。初期値は卸商品の標準単価。医院別単価があれば変更）
+                単価（税抜・円。初期値は自院向けの単価、無ければ卸の標準単価）
                 <input
                   name="unitPrice"
                   type="number"
-                  min={1}
-                  defaultValue={selected.unitPrice}
-                  required
+                  min={0}
+                  defaultValue={purchasePriceOf(selected)}
                   className="mt-1 block w-full rounded border p-2"
                 />
               </label>

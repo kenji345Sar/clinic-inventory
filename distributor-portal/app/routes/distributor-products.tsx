@@ -7,14 +7,29 @@ export function meta() {
   return [{ title: "商品マスタ | 卸ポータル" }];
 }
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ params, request }: Route.LoaderArgs) {
   const [distributors, products] = await Promise.all([
     api.listDistributors(),
     api.listProducts(params.distributorId),
   ]);
   const distributorName =
     distributors.find((d) => d.id === params.distributorId)?.name ?? "不明な卸業者";
-  return { distributorId: params.distributorId, distributorName, products };
+
+  // ?product=<id> が付いていれば、その商品の医院別単価の内訳も取る。
+  // 一覧に全商品分の単価を載せると重くなるため、選択された1件だけ取得する。
+  const selectedProductId = new URL(request.url).searchParams.get("product") ?? "";
+  const selectedProduct = products.find((p) => p.id === selectedProductId) ?? null;
+  const facilityPrices = selectedProduct
+    ? await api.listFacilityPrices(params.distributorId, selectedProduct.id)
+    : [];
+
+  return {
+    distributorId: params.distributorId,
+    distributorName,
+    products,
+    selectedProduct,
+    facilityPrices,
+  };
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
@@ -25,7 +40,10 @@ export async function action({ params, request }: Route.ActionArgs) {
     vendorName: String(form.get("vendorName") ?? ""),
     vendorProductCode: String(form.get("vendorProductCode") ?? ""),
     janCode: String(form.get("janCode") ?? ""),
-    unitPrice: Number(form.get("unitPrice") ?? 0),
+    // 空欄は「単価を公表しない」= null として送る(0円と区別する)
+    unitPrice: String(form.get("unitPrice") ?? "").trim() === ""
+      ? null
+      : Number(form.get("unitPrice")),
   };
 
   try {
@@ -43,7 +61,8 @@ export default function DistributorProducts({
   loaderData,
   actionData,
 }: Route.ComponentProps) {
-  const { distributorId, distributorName, products } = loaderData;
+  const { distributorId, distributorName, products, selectedProduct, facilityPrices } =
+    loaderData;
 
   return (
     <main className="mx-auto max-w-4xl p-8">
@@ -99,12 +118,11 @@ export default function DistributorProducts({
             <input name="janCode" className="mt-1 w-full rounded border p-2" />
           </label>
           <label className="text-sm">
-            標準単価（税抜・円）
+            標準単価（税抜・円。医院ごとに単価を決めている場合は空欄）
             <input
               name="unitPrice"
               type="number"
               min={1}
-              required
               className="mt-1 w-full rounded border p-2"
             />
           </label>
@@ -148,7 +166,23 @@ export default function DistributorProducts({
                   <td className="p-2">{p.name}</td>
                   <td className="p-2">{p.vendorName}</td>
                   <td className="p-2 font-mono">{p.janCode || "—"}</td>
-                  <td className="p-2 text-right">{formatYen(p.unitPrice)}</td>
+                  <td className="p-2 text-right">
+                    {p.unitPrice !== null ? (
+                      formatYen(p.unitPrice)
+                    ) : p.facilityPriceCount > 0 ? (
+                      // 医院ごとに単価を決めている商品。¥0と出すと「0円で卸している」と
+                      // 読めてしまうため、件数を出して内訳へ誘導する。
+                      <Link
+                        to={`?product=${p.id}`}
+                        className="text-blue-600 hover:underline"
+                        preventScrollReset
+                      >
+                        医院別（{p.facilityPriceCount}院）
+                      </Link>
+                    ) : (
+                      formatYen(0)
+                    )}
+                  </td>
                   <td className="p-2">
                     {p.discontinued ? (
                       <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-600">
@@ -166,6 +200,44 @@ export default function DistributorProducts({
           </table>
         )}
       </section>
+
+      {selectedProduct && (
+        <section className="mt-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">
+              医院別単価 — {selectedProduct.name}
+              <span className="ml-2 font-mono text-sm text-gray-500">
+                {selectedProduct.distributorProductCode}
+              </span>
+            </h2>
+            <Link to="." className="text-sm text-blue-600 hover:underline">
+              閉じる
+            </Link>
+          </div>
+          {facilityPrices.length === 0 ? (
+            <p className="rounded border border-dashed p-4 text-sm text-gray-500">
+              この商品に医院別単価は設定されていません。
+            </p>
+          ) : (
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b bg-gray-50 text-left">
+                  <th className="p-2">医院</th>
+                  <th className="p-2 text-right">単価</th>
+                </tr>
+              </thead>
+              <tbody>
+                {facilityPrices.map((fp) => (
+                  <tr key={fp.facilityId} className="border-b">
+                    <td className="p-2">{fp.facilityName || fp.facilityId}</td>
+                    <td className="p-2 text-right">{formatYen(fp.unitPrice)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
     </main>
   );
 }

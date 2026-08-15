@@ -11,6 +11,10 @@ import (
 //
 // 卸商品コード（DistributorProductCode）は卸独自の商品コード体系。
 // ベンダー（メーカー）名・ベンダーが割り当てている商品コード（VendorProductCode）は別途保持する。
+//
+// 標準単価（unitPrice）はnil可。単価を公表せず商品マスタだけ送ってくる卸があるため、
+// 「0円」と「非公表」を区別できるようポインタで持つ（docs/architecture/distributor-catalog-import.md 4章）。
+// 医院ごとに単価を決めている卸の単価はここではなくFacilityPriceが持つ。
 type DistributorProduct struct {
 	id                     shareddomain.ID
 	distributorID          shareddomain.ID
@@ -19,11 +23,11 @@ type DistributorProduct struct {
 	vendorName             string
 	vendorProductCode      string // 任意。ベンダーが割り当てている商品コード
 	janCode                string // 任意
-	unitPrice              int    // 標準単価（税抜・円）。その卸の定価
+	unitPrice              *int   // 標準単価（税抜・円）。その卸の定価。nilは非公表
 	discontinued           bool
 }
 
-func NewDistributorProduct(distributorID shareddomain.ID, distributorProductCode, name, vendorName string, unitPrice int) (*DistributorProduct, error) {
+func NewDistributorProduct(distributorID shareddomain.ID, distributorProductCode, name, vendorName string, unitPrice *int) (*DistributorProduct, error) {
 	if distributorID.IsZero() {
 		return nil, errors.New("卸業者の指定は必須です")
 	}
@@ -36,7 +40,7 @@ func NewDistributorProduct(distributorID shareddomain.ID, distributorProductCode
 	if vendorName == "" {
 		return nil, errors.New("ベンダー名は必須です")
 	}
-	if unitPrice <= 0 {
+	if unitPrice != nil && *unitPrice <= 0 {
 		return nil, errors.New("単価は1円以上で指定してください")
 	}
 	return &DistributorProduct{
@@ -56,8 +60,11 @@ func (p *DistributorProduct) Name() string                   { return p.name }
 func (p *DistributorProduct) VendorName() string             { return p.vendorName }
 func (p *DistributorProduct) VendorProductCode() string      { return p.vendorProductCode }
 func (p *DistributorProduct) JANCode() string                { return p.janCode }
-func (p *DistributorProduct) UnitPrice() int                 { return p.unitPrice }
+func (p *DistributorProduct) UnitPrice() *int                { return p.unitPrice }
 func (p *DistributorProduct) Discontinued() bool             { return p.discontinued }
+
+// HasUnitPrice は標準単価が公表されているかを返す。
+func (p *DistributorProduct) HasUnitPrice() bool { return p.unitPrice != nil }
 
 func (p *DistributorProduct) SetVendorProductCode(code string) {
 	p.vendorProductCode = code
@@ -78,7 +85,7 @@ func ReconstructDistributorProduct(
 	id shareddomain.ID,
 	distributorID shareddomain.ID,
 	distributorProductCode, name, vendorName, vendorProductCode, janCode string,
-	unitPrice int,
+	unitPrice *int,
 	discontinued bool,
 ) *DistributorProduct {
 	return &DistributorProduct{

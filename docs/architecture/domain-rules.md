@@ -40,6 +40,8 @@ petty-cashと同じく、業務ルールは極力ドメイン層（`domain/`）�
 | 卸商品はベンダー（メーカー）名を持つ | 要件（卸商品マスタの必須項目） |
 | 卸商品を廃盤にする場合は物理削除せず廃盤フラグを立てる | クリニック商品からの参照（紐付け）が残っている可能性があるため、参照整合性を壊さない |
 | 卸からの商品マスタ・価格表CSVの取り込みは`(distributor_id, distributor_product_code)`でupsertする | 卸商品コードは卸内で一意という既存ルールと整合させ、在庫有無・単価を更新する |
+| 卸商品の標準単価は「非公表」を取りうる（NULL可） | 単価を公表せず商品マスタだけ送ってくる卸があるため。0円と非公表を区別する（[distributor-catalog-import.md 3章](distributor-catalog-import.md#3-卸ごとに違うデータの持ち方をどう受けるか)） |
+| 医院ごとに単価を決めている卸の単価は、卸商品ではなく医院別単価（FacilityPrice）が持つ | 単価は卸とクリニックの契約に紐づく情報で、商品マスタとは別のタイミング・別のCSVで届くため、独立して更新できるようにする |
 
 ---
 
@@ -100,7 +102,7 @@ petty-cashと同じく、業務ルールは極力ドメイン層（`domain/`）�
 
 ## 卸連携CSV基盤（DistributorCsvIngestion）コンテキスト
 
-このコンテキストは独自の集約を持たず、S3を介したクリニック・卸業者間のCSVファイル連携をトリガーに、DistributorCatalogコンテキストとProcurementコンテキストの集約を更新するプロセスを担う。S3バケット・IAMの実際の設定・運用手順は[s3-storage.md](s3-storage.md)を参照。
+このコンテキストは独自の集約を持たず、S3を介したクリニック・卸業者間のCSVファイル連携をトリガーに、DistributorCatalogコンテキストとProcurementコンテキストの集約を更新するプロセスを担う。**卸→クリニック方向の取り込み処理の実装は別リポジトリ`clinic-inventory-csv-functions`にあり**、このリポジトリはテーブル定義と反映先の集約を持つ([distributor-catalog-import.md](distributor-catalog-import.md))。S3バケット・IAMの実際の設定・運用手順は[s3-storage.md](s3-storage.md)を参照。
 
 CSVは3種類あり、アップロード主体と反映先が異なる。
 

@@ -24,5 +24,6 @@ func (l PurchaseOrderCsvLine) Amount() int { return l.Quantity * l.UnitPrice }
 // 卸ごとにCSVフォーマットが異なるため(docs/architecture/domain-rules.md「卸連携CSV基盤」)、
 // 実装は卸別アダプタとして infrastructure 層に置く。
 type PurchaseOrderCsvUploader interface {
-	Upload(ctx context.Context, order *procdomain.PurchaseOrder, facilityName string, orderedAt time.Time, lines []PurchaseOrderCsvLine) error
+	// distributorCode はS3のフォルダ名(orders/{distributorCode}/...)に使う卸コード。
+	Upload(ctx context.Context, order *procdomain.PurchaseOrder, distributorCode, facilityName string, orderedAt time.Time, lines []PurchaseOrderCsvLine) error
 }

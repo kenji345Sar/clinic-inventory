@@ -28,13 +28,15 @@ func NewPurchaseOrderCsvUploader(uploader *storage.S3Uploader) *PurchaseOrderCsv
 
 var csvHeader = []string{"発注ID", "発注日", "クリニックID", "クリニック名", "卸商品コード", "商品名", "数量", "単価", "金額"}
 
-func (u *PurchaseOrderCsvUploader) Upload(ctx context.Context, order *procdomain.PurchaseOrder, facilityName string, orderedAt time.Time, lines []procapp.PurchaseOrderCsvLine) error {
+func (u *PurchaseOrderCsvUploader) Upload(ctx context.Context, order *procdomain.PurchaseOrder, distributorCode, facilityName string, orderedAt time.Time, lines []procapp.PurchaseOrderCsvLine) error {
 	body, err := encodePurchaseOrderCsv(order, facilityName, orderedAt, lines)
 	if err != nil {
 		return err
 	}
 	// 卸ごとにフォルダを分け、卸側からはIAM等で自社フォルダのみアクセスさせる想定。
-	key := fmt.Sprintf("orders/%s/%s/%s.csv", order.DistributorID().String(), order.FacilityID().String(), order.ID().String())
+	// フォルダ名は卸業者に案内する場面で人が読めるよう、UUIDではなく卸コードを使う
+	// (docs/architecture/s3-storage.md 3章)。
+	key := fmt.Sprintf("orders/%s/%s/%s.csv", distributorCode, order.FacilityID().String(), order.ID().String())
 	return u.uploader.Put(ctx, key, body, "text/csv")
 }
 

@@ -5,6 +5,7 @@ import (
 
 	distapp "clinic-inventory/internal/application/distributorcatalog"
 	distdomain "clinic-inventory/internal/domain/distributorcatalog"
+	shareddomain "clinic-inventory/internal/domain/shared"
 	"clinic-inventory/internal/handler/httputil"
 )
 
@@ -14,6 +15,7 @@ type Handler struct {
 	registerProduct   *distapp.RegisterDistributorProductUseCase
 	distributorRepo   distdomain.DistributorRepository
 	productRepo       distdomain.DistributorProductRepository
+	facilityPriceRepo distdomain.FacilityPriceRepository
 }
 
 func New(
@@ -21,12 +23,14 @@ func New(
 	registerProduct *distapp.RegisterDistributorProductUseCase,
 	distributorRepo distdomain.DistributorRepository,
 	productRepo distdomain.DistributorProductRepository,
+	facilityPriceRepo distdomain.FacilityPriceRepository,
 ) *Handler {
 	return &Handler{
 		createDistributor: createDistributor,
 		registerProduct:   registerProduct,
 		distributorRepo:   distributorRepo,
 		productRepo:       productRepo,
+		facilityPriceRepo: facilityPriceRepo,
 	}
 }
 
@@ -38,25 +42,32 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 type distributorResponse struct {
-	ID   string `json:"id"`
+	ID string `json:"id"`
+	// Code は卸コード。S3のフォルダ名(orders/{code}/, catalogs/{code}/)に使う。
+	Code string `json:"code"`
 	Name string `json:"name"`
 }
 
 func (h *Handler) postDistributor(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Code string `json:"code"`
 		Name string `json:"name"`
 	}
 	if err := httputil.DecodeJSON(r, &req); err != nil {
 		httputil.WriteError(w, err)
 		return
 	}
-	distributor, err := h.createDistributor.Execute(r.Context(), req.Name)
+	distributor, err := h.createDistributor.Execute(r.Context(), distapp.CreateDistributorInput{
+		Code: req.Code,
+		Name: req.Name,
+	})
 	if err != nil {
 		httputil.WriteError(w, err)
 		return
 	}
 	httputil.WriteJSON(w, http.StatusCreated, distributorResponse{
 		ID:   distributor.ID().String(),
+		Code: distributor.Code(),
 		Name: distributor.Name(),
 	})
 }
@@ -69,7 +80,7 @@ func (h *Handler) listDistributors(w http.ResponseWriter, r *http.Request) {
 	}
 	res := make([]distributorResponse, 0, len(distributors))
 	for _, d := range distributors {
-		res = append(res, distributorResponse{ID: d.ID().String(), Name: d.Name()})
+		res = append(res, distributorResponse{ID: d.ID().String(), Code: d.Code(), Name: d.Name()})
 	}
 	httputil.WriteJSON(w, http.StatusOK, res)
 }
@@ -82,8 +93,12 @@ type distributorProductResponse struct {
 	VendorName             string `json:"vendorName"`
 	VendorProductCode      string `json:"vendorProductCode"`
 	JANCode                string `json:"janCode"`
-	UnitPrice              int    `json:"unitPrice"`
-	Discontinued           bool   `json:"discontinued"`
+	// UnitPrice は卸の標準単価。nullは卸が単価を公表していないことを表す。
+	UnitPrice *int `json:"unitPrice"`
+	// FacilityUnitPrice は、クエリでfacilityIdを指定した場合に入るそのクリニック向けの単価
+	// (医院ごとに単価を決めている卸)。指定が無い・設定が無い場合はnull。
+	FacilityUnitPrice *int `json:"facilityUnitPrice"`
+	Discontinued      bool `json:"discontinued"`
 }
 
 func toDistributorProductResponse(p *distdomain.DistributorProduct) distributorProductResponse {
@@ -112,7 +127,7 @@ func (h *Handler) postProduct(w http.ResponseWriter, r *http.Request) {
 		VendorName             string `json:"vendorName"`
 		VendorProductCode      string `json:"vendorProductCode"`
 		JANCode                string `json:"janCode"`
-		UnitPrice              int    `json:"unitPrice"`
+		UnitPrice              *int   `json:"unitPrice"` // 未指定(null)は単価非公表
 	}
 	if err := httputil.DecodeJSON(r, &req); err != nil {
 		httputil.WriteError(w, err)
@@ -145,9 +160,34 @@ func (h *Handler) listProducts(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, err)
 		return
 	}
+
+	// クエリでfacilityIdが指定されていれば、そのクリニック向けの医院別単価を併せて返す。
+	// クリニックが商品を選ぶ画面で「自院の契約単価」を出すために使う。
+	// 商品数分の問い合わせにならないよう、クリニック単位で一括取得してから突き合わせる。
+	facilityPrices := map[shareddomain.ID]int{}
+	if raw := r.URL.Query().Get("facilityId"); raw != "" {
+		facilityID, err := httputil.ParseID(raw)
+		if err != nil {
+			httputil.WriteError(w, err)
+			return
+		}
+		prices, err := h.facilityPriceRepo.FindByFacility(r.Context(), facilityID)
+		if err != nil {
+			httputil.WriteError(w, err)
+			return
+		}
+		for _, price := range prices {
+			facilityPrices[price.DistributorProductID()] = price.UnitPrice()
+		}
+	}
+
 	res := make([]distributorProductResponse, 0, len(products))
 	for _, p := range products {
-		res = append(res, toDistributorProductResponse(p))
+		item := toDistributorProductResponse(p)
+		if price, ok := facilityPrices[p.ID()]; ok {
+			item.FacilityUnitPrice = &price
+		}
+		res = append(res, item)
 	}
 	httputil.WriteJSON(w, http.StatusOK, res)
 }

@@ -15,15 +15,18 @@ import (
 type RegisterClinicProductUseCase struct {
 	clinicProductRepo      proddomain.ClinicProductRepository
 	distributorProductRepo distdomain.DistributorProductRepository
+	facilityPriceRepo      distdomain.FacilityPriceRepository
 }
 
 func NewRegisterClinicProductUseCase(
 	clinicProductRepo proddomain.ClinicProductRepository,
 	distributorProductRepo distdomain.DistributorProductRepository,
+	facilityPriceRepo distdomain.FacilityPriceRepository,
 ) *RegisterClinicProductUseCase {
 	return &RegisterClinicProductUseCase{
 		clinicProductRepo:      clinicProductRepo,
 		distributorProductRepo: distributorProductRepo,
+		facilityPriceRepo:      facilityPriceRepo,
 	}
 }
 
@@ -63,10 +66,22 @@ func (uc *RegisterClinicProductUseCase) Execute(ctx context.Context, in Register
 		name = distributorProduct.Name()
 	}
 
-	// 単価は未指定(0)なら卸商品の標準単価を継承。指定があれば医院別単価として上書き。
+	// 単価は指定があればその値。未指定(0)なら「卸が決めたこのクリニック向けの単価
+	// → 卸の標準単価」の順で継承する（docs/architecture/distributor-catalog-import.md 3章）。
+	// どれも無い（単価が分からない卸）場合は0のまま登録する。単価は後日、卸から届く
+	// 受注結果の単価で更新する運用のため、ここで登録を止めない。
 	unitPrice := in.UnitPrice
 	if unitPrice == 0 {
-		unitPrice = distributorProduct.UnitPrice()
+		facilityPrice, err := uc.facilityPriceRepo.FindByProductAndFacility(ctx, in.DistributorProductID, in.FacilityID)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case facilityPrice != nil:
+			unitPrice = facilityPrice.UnitPrice()
+		case distributorProduct.HasUnitPrice():
+			unitPrice = *distributorProduct.UnitPrice()
+		}
 	}
 
 	product, err := proddomain.NewClinicProduct(in.FacilityID, in.ProductCode, name, in.DistributorProductID, unitPrice, in.ReorderPoint)

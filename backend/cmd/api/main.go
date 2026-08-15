@@ -22,6 +22,7 @@ import (
 	prodhandler "clinic-inventory/internal/handler/productcatalog"
 	"clinic-inventory/internal/infrastructure/database"
 	distinfra "clinic-inventory/internal/infrastructure/distributorcatalog"
+	inginfra "clinic-inventory/internal/infrastructure/distributorcsvingestion"
 	orginfra "clinic-inventory/internal/infrastructure/organization"
 	procinfra "clinic-inventory/internal/infrastructure/procurement"
 	prodinfra "clinic-inventory/internal/infrastructure/productcatalog"
@@ -69,9 +70,14 @@ func main() {
 		&orginfra.FacilityModel{},
 		&distinfra.DistributorModel{},
 		&distinfra.DistributorProductModel{},
+		&distinfra.DistributorProductFacilityPriceModel{},
 		&prodinfra.ClinicProductModel{},
 		&procinfra.PurchaseOrderModel{},
 		&procinfra.PurchaseOrderLineModel{},
+		// 取り込み用テーブル。書き込むのは別リポジトリ(clinic-inventory-csv-functions)だが、
+		// テーブルの作成・変更はbackendが一元的に行う。
+		&inginfra.IngestionRunModel{},
+		&inginfra.IngestionStagingRowModel{},
 	); err != nil {
 		log.Fatalf("failed to migrate: %v", err)
 	}
@@ -81,6 +87,7 @@ func main() {
 	facilityRepo := orginfra.NewFacilityRepository(db)
 	distributorRepo := distinfra.NewDistributorRepository(db)
 	distributorProductRepo := distinfra.NewDistributorProductRepository(db)
+	facilityPriceRepo := distinfra.NewFacilityPriceRepository(db)
 	clinicProductRepo := prodinfra.NewClinicProductRepository(db)
 	purchaseOrderRepo := procinfra.NewPurchaseOrderRepository(db)
 
@@ -89,22 +96,22 @@ func main() {
 	createFacility := orgapp.NewCreateFacilityUseCase(facilityRepo, corporationRepo)
 	createDistributor := distapp.NewCreateDistributorUseCase(distributorRepo)
 	registerDistributorProduct := distapp.NewRegisterDistributorProductUseCase(distributorProductRepo)
-	registerClinicProduct := prodapp.NewRegisterClinicProductUseCase(clinicProductRepo, distributorProductRepo)
+	registerClinicProduct := prodapp.NewRegisterClinicProductUseCase(clinicProductRepo, distributorProductRepo, facilityPriceRepo)
 	saveDraftPurchaseOrder := procapp.NewSaveDraftPurchaseOrderUseCase(purchaseOrderRepo, distributorRepo, distributorProductRepo, clinicProductRepo)
-	confirmPurchaseOrder := procapp.NewConfirmPurchaseOrderUseCase(purchaseOrderRepo, distributorProductRepo, clinicProductRepo, facilityRepo, orderCsvUploader)
+	confirmPurchaseOrder := procapp.NewConfirmPurchaseOrderUseCase(purchaseOrderRepo, distributorRepo, distributorProductRepo, clinicProductRepo, facilityRepo, orderCsvUploader)
 	removeDraftPurchaseOrder := procapp.NewRemoveDraftPurchaseOrderUseCase(purchaseOrderRepo)
 
 	// 認証が必要な業務APIハンドラ
 	protected := http.NewServeMux()
 	orghandler.New(createCorporation, createFacility, facilityRepo).Register(protected)
-	disthandler.New(createDistributor, registerDistributorProduct, distributorRepo, distributorProductRepo).Register(protected)
+	disthandler.New(createDistributor, registerDistributorProduct, distributorRepo, distributorProductRepo, facilityPriceRepo).Register(protected)
 	prodhandler.New(registerClinicProduct, clinicProductRepo, distributorProductRepo, distributorRepo).Register(protected)
 	prochandler.New(saveDraftPurchaseOrder, confirmPurchaseOrder, removeDraftPurchaseOrder, purchaseOrderRepo).Register(protected)
 
 	// 卸ポータル向けAPI(/api/portal/...)。卸業者はまだAuth0アカウントを持たないため未認証で公開する
 	// (docs/requirements.md 8章「後続」。認証を入れる際はここにRequireAuth相当を差し込む)。
 	portal := http.NewServeMux()
-	portalhandler.New(registerDistributorProduct, distributorRepo, distributorProductRepo, purchaseOrderRepo, clinicProductRepo, facilityRepo).Register(portal)
+	portalhandler.New(registerDistributorProduct, distributorRepo, distributorProductRepo, purchaseOrderRepo, clinicProductRepo, facilityRepo, facilityPriceRepo).Register(portal)
 
 	// ルーティング。health と /api/portal/ は認証不要、それ以外の /api/* は RequireAuth を通す。
 	// Go の ServeMux は登録パターンのうちより具体的なもの(サブツリーが狭い方)を優先するため、
