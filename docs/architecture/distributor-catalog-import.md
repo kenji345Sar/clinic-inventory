@@ -9,6 +9,7 @@
 
 - 位置づけ: [domain-rules.md「卸連携CSV基盤」](domain-rules.md#卸連携csv基盤distributorcsvingestionコンテキスト)の3種類のCSVのうち「商品マスタ・価格表CSV」
 - S3バケット・IAMの実設定は[s3-storage.md](s3-storage.md)
+- 別種のCSV: 受注確定CSV(卸の引き当て結果・納入単価)の受け皿は未実装。論点は[order-acknowledgement-import.md](order-acknowledgement-import.md)
 
 最終更新: 2026-08-14
 
