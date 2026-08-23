@@ -2,6 +2,8 @@
 
 医科・歯科・獣医クリニックの医薬品在庫管理。要件は [docs/requirements.md](docs/requirements.md)、ドメインモデルは [docs/architecture/domain-rules.md](docs/architecture/domain-rules.md) を参照。
 
+**今どこまで進んでいて、何が課題で、次に何をやるかは [docs/status_log.md](docs/status_log.md) を参照。**
+
 Goの構文に慣れていない場合は [docs/go/go-for-csharp.md](docs/go/go-for-csharp.md)（C#経験者のためのGo読み方ノート。petty-cashとの対応表）から読むとよい。リクエストがDBまで届く仕組みは [docs/go/request-to-sql-flow.md](docs/go/request-to-sql-flow.md) を参照。
 
 ## 必要なもの
