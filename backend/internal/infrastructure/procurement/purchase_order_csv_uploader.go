@@ -35,7 +35,7 @@ func (u *PurchaseOrderCsvUploader) Upload(ctx context.Context, order *procdomain
 	}
 	// 卸ごとにフォルダを分け、卸側からはIAM等で自社フォルダのみアクセスさせる想定。
 	// フォルダ名は卸業者に案内する場面で人が読めるよう、UUIDではなく卸コードを使う
-	// (docs/architecture/s3-storage.md 3章)。
+	// (clinic-inventory-csv-functions/docs/s3-storage.md 3章)。
 	key := fmt.Sprintf("orders/%s/%s/%s.csv", distributorCode, order.FacilityID().String(), order.ID().String())
 	return u.uploader.Put(ctx, key, body, "text/csv")
 }

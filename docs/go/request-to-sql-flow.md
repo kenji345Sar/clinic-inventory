@@ -247,7 +247,7 @@ err := uc.clinicProductRepo.Create(ctx, product)
 （`/facilities/:id/orders`）を追う。この画面は**1回の操作では発注が完了しない**。
 「カートに追加」で下書きを作り、「発注する」で確定する2段階なので、往復も2回に分かれ、
 **外部サービス(S3)への副作用は2回目にだけ**起きる。S3周りの詳細は
-[`s3-storage.md`](../architecture/s3-storage.md)を参照。
+別リポジトリ`clinic-inventory-csv-functions`の`docs/s3-storage.md`を参照。
 
 | 画面の操作 | HTTPメソッド + パス | handler | ユースケース | DBに起きること |
 |---|---|---|---|---|
@@ -447,7 +447,7 @@ return buf.Bytes(), nil
 `Flush()`の後にしか現れないことがある。`Write`だけ見ていると取りこぼす。
 
 S3のキーもここで決める。命名の意図（卸ごとのテナント分離）は
-[`s3-storage.md`の3章](../architecture/s3-storage.md)を参照。
+別リポジトリ`clinic-inventory-csv-functions`の`docs/s3-storage.md`3章を参照。
 
 ```go
 key := fmt.Sprintf("orders/%s/%s/%s.csv",
@@ -488,7 +488,7 @@ s3Client := s3.NewFromConfig(awsCfg)
 
 `LoadDefaultConfig`が環境変数 → `~/.aws/credentials` → IAMロールの順に自動で探す
 （C#のAWSSDKのデフォルト認証チェーンと同じ考え方）。実際に設定している値と、なぜ
-アクセスキー方式にしているかは[`s3-storage.md`の2章](../architecture/s3-storage.md)を参照。
+アクセスキー方式にしているかは別リポジトリ`clinic-inventory-csv-functions`の`docs/s3-storage.md`2章を参照。
 
 #### この4段構造の実利
 

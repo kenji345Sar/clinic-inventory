@@ -16,7 +16,7 @@ var distributorCodePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 //
 // code（卸コード）はS3上のフォルダ名として使う識別子。
 // 発注CSVを置く `orders/{卸コード}/...`、卸から商品マスタCSVを受け取る `catalogs/{卸コード}/...` の
-// どちらもこのコードでフォルダを分ける（docs/architecture/s3-storage.md）。
+// どちらもこのコードでフォルダを分ける（clinic-inventory-csv-functions/docs/s3-storage.md）。
 // UUIDではなくコードを使うのは、卸業者自身にフォルダを案内する場面で人が読めるようにするため。
 type Distributor struct {
 	id   shareddomain.ID

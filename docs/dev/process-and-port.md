@@ -159,7 +159,7 @@ kill $(lsof -t -nP -iTCP:8080 -sTCP:LISTEN)
 | コードを直したのに挙動が変わらない | 修正前に起動したプロセスがまだ動いている | `ps -o lstart` で起動時刻を見る |
 | `Ctrl+C` したのにブラウザから繋がる | 親だけ止まって子が残った | `PPID` が 1 になっていないか |
 | ターミナルを閉じたらAPIも落ちた | フォアグラウンド実行だった | バックグラウンド実行にするか、別ターミナルで動かす |
-| DBの列を足したら `cached plan must not change result type` | 起動中のプロセスが古いスキーマの実行計画を持っている | 再起動する（[s3-storage.md](../architecture/s3-storage.md) 等とは無関係のDB側の話） |
+| DBの列を足したら `cached plan must not change result type` | 起動中のプロセスが古いスキーマの実行計画を持っている | 再起動する（S3等とは無関係のDB側の話） |
 
 ---
 

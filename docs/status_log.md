@@ -38,7 +38,7 @@
 | 2026-08-13〜15 | Go学習ノート整備、JWTの時計ずれ許容、**卸ごとにバラバラなデータの持ち方を受ける対応**(単価3パターン・任意項目) |
 | 2026-08-14 | CSV取り込みを別リポジトリ`clinic-inventory-csv-functions`へ切り出し。S3のIAM権限を付与 |
 | 2026-08-15〜16 | S3フォルダを卸コードで判別。**設定ファイル駆動の汎用パーサをやめ、卸ごとのパーサに分割**(`ParserRegistry`) |
-| 2026-08-23 | 医院別単価の反映を実データで検証。受注確定CSVの論点を[order-acknowledgement-import.md](architecture/order-acknowledgement-import.md)に整理 |
+| 2026-08-23 | 医院別単価の反映を実データで検証。受注確定CSVの論点を`clinic-inventory-csv-functions`の`docs/order-acknowledgement-import.md`に整理 |
 
 ---
 
@@ -80,7 +80,7 @@
 |---|---|
 | 単価が実勢に追随しない | 医院別単価は**登録時点の値をコピー**する設計のため、卸が単価を変えても既存のクリニック商品は古いまま。自動追随させるか人が判断するか未決 |
 | CSVから消えた商品の扱い | 現状は放置(廃盤にしない)。全件洗い替えの卸に対して自動廃盤にするかは未決 |
-| 受注確定CSVの受け皿が無い | 納入単価・確定数量・欠品を受け取れない。分納の有無・完了判定が未確定。論点は[order-acknowledgement-import.md](architecture/order-acknowledgement-import.md) |
+| 受注確定CSVの受け皿が無い | 納入単価・確定数量・欠品を受け取れない。分納の有無・完了判定が未確定。論点は`clinic-inventory-csv-functions`の`docs/order-acknowledgement-import.md` |
 | 在庫コンテキストが未実装 | ドメインルール(FEFO・ロット・使用期限)は策定済みだがコードが無い |
 
 ---
@@ -116,10 +116,8 @@
 | 知りたいこと | 参照先 |
 |---|---|
 | 集約とドメインルール全体 | [architecture/domain-rules.md](architecture/domain-rules.md) |
-| 商品マスタCSV取り込み(反映される側の設計) | [architecture/distributor-catalog-import.md](architecture/distributor-catalog-import.md) |
 | 取り込み処理そのもの(パイプライン) | `clinic-inventory-csv-functions`の`docs/design.md` |
-| 受注確定CSVの論点(未実装) | [architecture/order-acknowledgement-import.md](architecture/order-acknowledgement-import.md) |
-| S3バケット・IAM | [architecture/s3-storage.md](architecture/s3-storage.md) |
+| S3・CSV取り込み関連(商品マスタ/受注確定/バケット・IAM) | 別リポジトリ`clinic-inventory-csv-functions`の`docs/` |
 | テーブル定義 | [architecture/database-schema.md](architecture/database-schema.md) |
 | 認証・認可 | [architecture/authentication.md](architecture/authentication.md) |
 | 要件・決定事項・未確定事項 | [requirements.md](requirements.md) |

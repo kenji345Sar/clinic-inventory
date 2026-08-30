@@ -40,7 +40,7 @@ petty-cashと同じく、業務ルールは極力ドメイン層（`domain/`）�
 | 卸商品はベンダー（メーカー）名を持つ | 要件（卸商品マスタの必須項目） |
 | 卸商品を廃盤にする場合は物理削除せず廃盤フラグを立てる | クリニック商品からの参照（紐付け）が残っている可能性があるため、参照整合性を壊さない |
 | 卸からの商品マスタ・価格表CSVの取り込みは`(distributor_id, distributor_product_code)`でupsertする | 卸商品コードは卸内で一意という既存ルールと整合させ、在庫有無・単価を更新する |
-| 卸商品の標準単価は「非公表」を取りうる（NULL可） | 単価を公表せず商品マスタだけ送ってくる卸があるため。0円と非公表を区別する（[distributor-catalog-import.md 3章](distributor-catalog-import.md#3-卸ごとに違うデータの持ち方をどう受けるか)） |
+| 卸商品の標準単価は「非公表」を取りうる（NULL可） | 単価を公表せず商品マスタだけ送ってくる卸があるため。0円と非公表を区別する（`clinic-inventory-csv-functions`の`docs/distributor-catalog-import.md`2章） |
 | 医院ごとに単価を決めている卸の単価は、卸商品ではなく医院別単価（FacilityPrice）が持つ | 単価は卸とクリニックの契約に紐づく情報で、商品マスタとは別のタイミング・別のCSVで届くため、独立して更新できるようにする |
 
 ---
@@ -77,8 +77,8 @@ petty-cashと同じく、業務ルールは極力ドメイン層（`domain/`）�
 | 発注明細は1件以上必須 | 空の発注を防ぐ |
 | 発注はクリニック×卸業者の単位で作成する | [requirements.md 11章](../requirements.md#11-決定事項decision-log)の契約単位の決定と対応 |
 | 発注確定後は明細を変更できない | 確定後の改ざん防止。取消は逆仕訳（赤伝と同じ考え方）で表現する |
-| 卸からの受注確定CSVを取り込むと、確定数量・欠品数量・納入単価が記録される（**未実装**） | 卸側の在庫状況（欠品）と、引き当てで発注時から変わった納入単価を発注側に反映するため。発注数量・発注単価そのものは書き換えず別に持つので、「明細を変更できない」不変条件とは矛盾しない。記録先をPurchaseOrderLineの列にするか子テーブルにするかは分納・複数回確定の有無で決まり、未確定（[order-acknowledgement-import.md](order-acknowledgement-import.md)） |
-| 卸の受注確定は、クリニックの発注確定（`StatusConfirmed`）とは別の状態として表す（**未実装**） | 現状の`confirmed`はクリニックが下書きを締めた操作を指す。これを卸側の確定にも流用すると、「卸に送っただけの発注」と「卸が引き当てを終えた発注」が区別できなくなる（[order-acknowledgement-import.md 2章](order-acknowledgement-import.md#2-確定が2つあり用語が衝突している)） |
+| 卸からの受注確定CSVを取り込むと、確定数量・欠品数量・納入単価が記録される（**未実装**） | 卸側の在庫状況（欠品）と、引き当てで発注時から変わった納入単価を発注側に反映するため。発注数量・発注単価そのものは書き換えず別に持つので、「明細を変更できない」不変条件とは矛盾しない。記録先をPurchaseOrderLineの列にするか子テーブルにするかは分納・複数回確定の有無で決まり、未確定（`clinic-inventory-csv-functions`の`docs/order-acknowledgement-import.md`） |
+| 卸の受注確定は、クリニックの発注確定（`StatusConfirmed`）とは別の状態として表す（**未実装**） | 現状の`confirmed`はクリニックが下書きを締めた操作を指す。これを卸側の確定にも流用すると、「卸に送っただけの発注」と「卸が引き当てを終えた発注」が区別できなくなる（`clinic-inventory-csv-functions`の`docs/order-acknowledgement-import.md`2章） |
 | 確定時に発注書（PDF）を生成する | [requirements.md 10章](../requirements.md#10-発注書フォーマット決定)のフォーマットに従う |
 | EDI対応卸への確定発注は、卸別アダプタ経由でデータを送信する | 卸ごとにフォーマットが異なるため、共通の発注データモデル→卸別アダプタで変換する方針（[requirements.md 5章](../requirements.md#5-業務フロー)手順5-b） |
 | 在庫が発注点を下回っている状態を判定できる（`IsBelowReorderPoint()`） | 発注点アラート・自動発注のトリガーとして在庫コンテキストから参照する |
@@ -103,7 +103,7 @@ petty-cashと同じく、業務ルールは極力ドメイン層（`domain/`）�
 
 ## 卸連携CSV基盤（DistributorCsvIngestion）コンテキスト
 
-このコンテキストは独自の集約を持たず、S3を介したクリニック・卸業者間のCSVファイル連携をトリガーに、DistributorCatalogコンテキストとProcurementコンテキストの集約を更新するプロセスを担う。**卸→クリニック方向の取り込み処理の実装は別リポジトリ`clinic-inventory-csv-functions`にあり**、このリポジトリはテーブル定義と反映先の集約を持つ(商品マスタCSVは[distributor-catalog-import.md](distributor-catalog-import.md)、受注確定CSVは[order-acknowledgement-import.md](order-acknowledgement-import.md))。S3バケット・IAMの実際の設定・運用手順は[s3-storage.md](s3-storage.md)を参照。
+このコンテキストは独自の集約を持たず、S3を介したクリニック・卸業者間のCSVファイル連携をトリガーに、DistributorCatalogコンテキストとProcurementコンテキストの集約を更新するプロセスを担う。**卸→クリニック方向の取り込み処理の実装は別リポジトリ`clinic-inventory-csv-functions`にあり**、このリポジトリはテーブル定義と反映先の集約を持つ。**S3経由の取り込みに関する設計・運用のドキュメントは、S3バケット・IAMの設定も含めてすべて`clinic-inventory-csv-functions`の`docs/`にある**。
 
 CSVは3種類あり、アップロード主体と反映先が異なる。
 
@@ -111,7 +111,7 @@ CSVは3種類あり、アップロード主体と反映先が異なる。
 |---|---|---|---|
 | 発注CSV | クリニック | Procurement（PurchaseOrder新規作成） | 発注時の品目・数量 |
 | 商品マスタ・価格表CSV | 卸業者 | DistributorCatalog（DistributorProduct更新） | 在庫有無・単価の更新 |
-| 受注確定CSV | 卸業者 | Procurement（PurchaseOrderLine更新） | 欠品情報を含む確定数量と納入単価。**未実装**（[order-acknowledgement-import.md](order-acknowledgement-import.md)） |
+| 受注確定CSV | 卸業者 | Procurement（PurchaseOrderLine更新） | 欠品情報を含む確定数量と納入単価。**未実装**（`clinic-inventory-csv-functions`の`docs/order-acknowledgement-import.md`） |
 
 | ルール | 意図 |
 |---|---|

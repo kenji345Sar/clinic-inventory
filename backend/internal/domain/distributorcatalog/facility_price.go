@@ -7,7 +7,7 @@ import (
 )
 
 // FacilityPrice（医院別単価）。卸によっては商品ごとの定価ではなく、
-// 医院（クリニック）ごとに個別の単価を設定している（docs/architecture/distributor-catalog-import.md 4章）。
+// 医院（クリニック）ごとに個別の単価を設定している（clinic-inventory-csv-functions/docs/distributor-catalog-import.md 2章）。
 //
 // DistributorProductの配下エンティティにはしない。単価は卸とクリニックの契約に紐づく情報で、
 // 商品マスタの更新とは別のタイミング・別のCSVで届くことがあるため、独立して更新できる形にする。

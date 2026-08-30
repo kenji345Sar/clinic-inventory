@@ -67,7 +67,7 @@ func (uc *RegisterClinicProductUseCase) Execute(ctx context.Context, in Register
 	}
 
 	// 単価は指定があればその値。未指定(0)なら「卸が決めたこのクリニック向けの単価
-	// → 卸の標準単価」の順で継承する（docs/architecture/distributor-catalog-import.md 3章）。
+	// → 卸の標準単価」の順で継承する（clinic-inventory-csv-functions/docs/distributor-catalog-import.md 2章）。
 	// どれも無い（単価が分からない卸）場合は0のまま登録する。単価は後日、卸から届く
 	// 受注結果の単価で更新する運用のため、ここで登録を止めない。
 	unitPrice := in.UnitPrice

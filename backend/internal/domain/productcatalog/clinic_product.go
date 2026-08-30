@@ -23,7 +23,7 @@ type ClinicProduct struct {
 	janCode              string // 任意。JANが無い商品は名称等で検索する運用
 	// 仕入単価（税抜・円）。卸商品の標準単価または医院別単価を初期値にする。
 	// 単価が分からない卸もあるため0を許容し、その場合は後から受注結果の単価で更新する運用
-	// （docs/architecture/distributor-catalog-import.md 3章）。
+	// （clinic-inventory-csv-functions/docs/distributor-catalog-import.md 2章）。
 	unitPrice    int
 	reorderPoint int
 }

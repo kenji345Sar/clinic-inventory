@@ -24,7 +24,7 @@ type DistributorProductModel struct {
 	VendorProductCode      string
 	JANCode                string `gorm:"column:jan_code;index"`
 	// 標準単価（税抜・円）。NULLは「卸が単価を公表していない」を表す。
-	// 0円との区別が必要なためポインタ（docs/architecture/distributor-catalog-import.md 4章）。
+	// 0円との区別が必要なためポインタ（clinic-inventory-csv-functions/docs/distributor-catalog-import.md 2章）。
 	UnitPrice    *int `gorm:""`
 	Discontinued bool `gorm:"not null;default:false"`
 }
