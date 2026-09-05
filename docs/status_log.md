@@ -116,7 +116,7 @@
 | 知りたいこと | 参照先 |
 |---|---|
 | 集約とドメインルール全体 | [architecture/domain-rules.md](architecture/domain-rules.md) |
-| 取り込み処理そのもの(パイプライン) | `clinic-inventory-csv-functions`の`docs/design.md` |
+| 取り込み処理そのもの(パイプライン) | `clinic-inventory-csv-functions`の`docs/catalog-import-pipeline.md` |
 | S3・CSV取り込み関連(商品マスタ/受注確定/バケット・IAM) | 別リポジトリ`clinic-inventory-csv-functions`の`docs/` |
 | テーブル定義 | [architecture/database-schema.md](architecture/database-schema.md) |
 | 認証・認可 | [architecture/authentication.md](architecture/authentication.md) |

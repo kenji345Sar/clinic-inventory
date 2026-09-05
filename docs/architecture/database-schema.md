@@ -159,7 +159,7 @@ erDiagram
 | unit_price | bigint | NO | | 医院別単価（税抜・円） |
 
 ### distributor_catalog_ingestion_runs（商品マスタCSVの取り込み履歴）
-S3オブジェクト1件の取り込み1回分。設計は別リポジトリ`clinic-inventory-csv-functions`の`docs/distributor-catalog-import.md`。
+S3オブジェクト1件の取り込み1回分。設計は別リポジトリ`clinic-inventory-csv-functions`の`docs/catalog-import-backend.md`。
 
 | 列 | 型 | NULL | 既定 | 備考 |
 |---|---|---|---|---|

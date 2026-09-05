@@ -24,7 +24,7 @@ type RegisterDistributorProductInput struct {
 	VendorProductCode      string // 任意
 	JANCode                string // 任意
 	// 標準単価（税抜・円）。nilは「卸が単価を公表していない」を表す
-	// （clinic-inventory-csv-functions/docs/distributor-catalog-import.md 2章）。
+	// （clinic-inventory-csv-functions/docs/catalog-import-backend.md 2章）。
 	UnitPrice *int
 }
 

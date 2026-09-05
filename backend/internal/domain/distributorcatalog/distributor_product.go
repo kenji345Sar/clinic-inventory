@@ -13,7 +13,7 @@ import (
 // ベンダー（メーカー）名・ベンダーが割り当てている商品コード（VendorProductCode）は別途保持する。
 //
 // 標準単価（unitPrice）はnil可。単価を公表せず商品マスタだけ送ってくる卸があるため、
-// 「0円」と「非公表」を区別できるようポインタで持つ（clinic-inventory-csv-functions/docs/distributor-catalog-import.md 2章）。
+// 「0円」と「非公表」を区別できるようポインタで持つ（clinic-inventory-csv-functions/docs/catalog-import-backend.md 2章）。
 // 医院ごとに単価を決めている卸の単価はここではなくFacilityPriceが持つ。
 type DistributorProduct struct {
 	id                     shareddomain.ID
