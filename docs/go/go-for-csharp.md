@@ -21,9 +21,12 @@ clinic-inventoryのドメイン層を読めるようになるための対応表�
 | `public int Id { get; private set; }` | 小文字フィールド＋大文字getterメソッド | 後述。アクセス修飾子も無い |
 | コンストラクタ / `static Create()` | `NewFoo(...)` 関数 | 命名規約。`New`+型名 |
 | `throw new ArgumentException(...)` | `return nil, errors.New(...)` | 例外は無い。エラーは戻り値 |
-| `public void Bar()` | `func (f *Foo) Bar()` | `(f *Foo)`がレシーバ＝`this` |
+| `public void Bar()` | `func (f *Foo) Bar()` | `(f *Foo)`がレシーバ＝`this`。拡張メソッドの`this Foo f`と同じ位置 |
 | `int?`（null許容） | `*int`（ポインタ） | nilになれる型で「値が無い」を表す |
 | `interface IFooRepository` | `type FooRepository interface` | ほぼ同じ。Goは`I`プレフィックスを付けない |
+| `record CreateFooInput(...)` | `type CreateFooInput struct` | DTOも同じ`struct`。役割の見分けは後述 |
+| `enum FacilityType` | `type FacilityType string` ＋ `const` | `type`はstruct以外にも付く。後述 |
+| `List<T>` | `[]T`（スライス） | `T[]`（固定長配列）は`[5]T`で別物。後述 |
 | `/// <summary>...</summary>` | `// コメント`（型・関数の直前） | 業務ルールはここに書く方針も同じ |
 | `internal`アクセス修飾子 | `internal/` ディレクトリ | 後述。ディレクトリ名で公開範囲を制御する |
 | `builder.Services.AddScoped<T>()` | `cmd/api/main.go`に手書きの配線 | 後述。DIコンテナが無い |
@@ -57,6 +60,43 @@ func (p *DistributorProduct) Name() string        { return p.name } // ← gette
 
 func (p *DistributorProduct) Discontinue() { ... } // ← メソッド
 ```
+
+### `type`で作れるものは`struct`だけではない
+
+`type`は「新しい型を1つ作る」宣言で、後ろに来るものは4種類ある（backend/internal での出現数）。
+
+| 出現数 | Go | C# |
+|---|---|---|
+| 62 | `type Foo struct { ... }` | `class` / `record` |
+| 8 | `type Foo interface { ... }` | `interface` |
+| 2 | `type FacilityType string` ＋ `const`群 | `enum` |
+| 1 | `type ID uuid.UUID` | ラッパー型（`readonly record struct`） |
+
+csv-functions側には関数型もある。
+
+```go
+type ParseFunc func(body []byte) ([]ingapp.CatalogRow, error)   // C#の delegate / Func<>
+```
+
+`type ID uuid.UUID`は**別名ではなく別の型**になる。中身が`uuid.UUID`でも代入には変換が要るので、
+`FacilityID`と`OrderID`を取り違えるとコンパイルエラーになる。C#の`record struct`で
+プリミティブを包むのと同じ目的。
+
+### `struct`は3つの役割を兼ねる — 見分けはフィールドの大文字/小文字
+
+C#は`record`（DTO）と`class`（サービス・エンティティ）で見た目が分かれるが、Goはすべて`type X struct`。
+役割はフィールドの頭文字と接尾辞から読む。
+
+| | DTO | サービス | エンティティ |
+|---|---|---|---|
+| 実例 | `CreateDistributorInput` | `ConfirmPurchaseOrderUseCase` | `DistributorProduct` |
+| フィールド | **大文字**（`Code`, `Name`） | **小文字**（`purchaseOrderRepo`） | **小文字**（`id`, `name`） |
+| フィールドの型 | 素の値（`string`, `int`） | リポジトリ・インターフェース | 素の値＋値オブジェクト |
+| 外からの扱い | 直接詰める | 触らせない | getter で読むだけ |
+| 生成のタイミング | リクエストごと | `main.go`で1個 | 業務データとして都度 |
+| メソッド | 無し | `Execute` | `Discontinue()`など業務操作 |
+| 接尾辞 | `Input` / `Output` / `Row` | `UseCase` / `Repository` / `Handler` | 集約名そのもの |
+| C# | `record` | `class`（primary constructor） | `class` |
 
 ---
 
@@ -96,6 +136,20 @@ func NewDistributorProduct(distributorID shareddomain.ID, code, name, vendorName
 
 `&DistributorProduct{...}`の`&`は「structを作ってそのポインタを返す」。C#の`new`に相当すると読んでよい。
 
+`New`は言語機能ではなく命名規約で、中身はただの関数。だから戻り値を自由に決められる。
+
+| | Go | C#のコンストラクタ |
+|---|---|---|
+| 失敗しうる（業務ルール検証あり） | `func NewDistributorProduct(...) (*DistributorProduct, error)` | 戻り値を持てないので`throw`するしかない |
+| 失敗しない（配線するだけ） | `func NewDistributorProductRepository(db *gorm.DB) *DistributorProductRepository` | 同じ |
+
+名前の付け方も2通りある。
+
+| 形 | 実例 | 使うとき |
+|---|---|---|
+| `New` ＋ 型名 | `procapp.NewConfirmPurchaseOrderUseCase(...)` | 同じパッケージに複数の型がある |
+| `New` だけ | `prochandler.New(...)` | パッケージ名で何を作るか自明。`handler.NewHandler`は冗長になるため |
+
 ---
 
 ## 4. 例外が無い → エラーは戻り値で伝播する
@@ -125,7 +179,52 @@ func (p *DistributorProduct) Discontinue() {
 
 `(p *DistributorProduct)`が「このメソッドはDistributorProductに付く」という宣言で、`p`はC#の`this`。`p.discontinued = true`は`this.discontinued = true`と同じ。
 
-`*`（ポインタ）付きレシーバは「本体を書き換えられる」。C#のclassは参照型なので常にこの挙動であり、ドメインのエンティティは基本`*`付きと覚えてよい。
+### C#の拡張メソッドと同じ形
+
+C#でも、classの外にメソッドを書くときは同じ位置に型を書いている。
+
+```csharp
+// C#（拡張メソッド）
+public static class ProductExtensions
+{
+    public static void Discontinue(this DistributorProduct p) { ... }
+    //                             ^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+```
+
+```go
+// Go — 上と同じ位置に同じものを書く
+func (p *DistributorProduct) Discontinue() { ... }
+//   ^^^^^^^^^^^^^^^^^^^^^^^
+```
+
+C#の`this DistributorProduct p`が、Goでは関数名の前の丸括弧に出ているだけ。Goのメソッドは全部この形で書く。
+
+### 読む順番
+
+`func (p *DistributorProduct) ID() shareddomain.ID`
+
+左から読むと詰まるので、真ん中→右→左の順で読む。
+
+| 読む順 | Goの部分 | C#で言うと |
+|---|---|---|
+| ① | `(p *DistributorProduct)` | `class DistributorProduct { ... }` の内側。`p`が`this` |
+| ② | `ID()` | メソッド名と引数リスト |
+| ③ | `shareddomain.ID` | 戻り値の型。C#はメソッド名の左、Goは右 |
+| ④ | `func` | 対応するものは無い（関数宣言の目印） |
+
+`(...)`が2つ並んでいたら、1つ目がレシーバ（所属する型）、2つ目が引数。
+
+### `*`（ポインタ）レシーバ
+
+`*`付きレシーバは「本体を書き換えられる」。
+
+| C# | Go | 補足 |
+|---|---|---|
+| `class`（参照型・常に本体を渡す） | `func (p *DistributorProduct) ...` | 書き換えが呼び出し元に反映される |
+| `struct`（値型・コピーが渡る） | `func (p DistributorProduct) ...` | 書き換えてもコピーが変わるだけ |
+
+C#は`class`と宣言した時点で参照型が確定するので、呼び出し側では意識しなくてよかった。Goのstructは既定でコピーが渡るため、メソッドごとに`*`を書いて指定する。ドメインのエンティティは基本`*`付きと覚えてよい。
 
 ---
 
@@ -258,11 +357,11 @@ UseCaseがhandlerに届くまでには①生成②受け渡し③保持の3段�
 `ConfirmPurchaseOrderUseCase`の実物で並べるとこうなる。
 
 ```go
-// ① backend/cmd/api/main.go:94 — 依存する4つのリポジトリとS3アップローダを渡して生成
+// ① backend/cmd/api/main.go:101 — 依存する5つのリポジトリとS3アップローダを渡して生成
 confirmPurchaseOrder := procapp.NewConfirmPurchaseOrderUseCase(
-	purchaseOrderRepo, distributorProductRepo, clinicProductRepo, facilityRepo, orderCsvUploader)
+	purchaseOrderRepo, distributorRepo, distributorProductRepo, clinicProductRepo, facilityRepo, orderCsvUploader)
 
-// ② backend/cmd/api/main.go:102 — handlerのNewに渡す
+// ② backend/cmd/api/main.go:109 — handlerのNewに渡す
 prochandler.New(saveDraftPurchaseOrder, confirmPurchaseOrder, removeDraftPurchaseOrder, purchaseOrderRepo).Register(protected)
 
 // ③ backend/internal/handler/procurement/handler.go:16 — フィールドとして保持
@@ -345,3 +444,28 @@ purchaseOrderRepo  procdomain.PurchaseOrderRepository  // ← domain層のイン
 
 ユースケースがインターフェースだけを見て、実際のgorm実装は`main.go`で差し込む（8章）。
 「ユースケースはDBの具体実装を知らない」というpetty-cashと同じ構造になっている。
+
+---
+
+## 10. `List<T>` が無い → スライス `[]T`
+
+```go
+// confirm_purchase_order.go:64
+csvLines := make([]PurchaseOrderCsvLine, 0, len(order.Lines()))   // 長さ0・容量は明細数
+csvLines = append(csvLines, PurchaseOrderCsvLine{ ... })          // 足すたびに伸びる
+```
+
+```csharp
+var csvLines = new List<PurchaseOrderCsvLine>(order.Lines.Count);
+csvLines.Add(new PurchaseOrderCsvLine { ... });
+```
+
+| C# | Go | |
+|---|---|---|
+| `List<T>` | `[]T`（スライス） | 伸びる。実務ではほぼこれ |
+| `T[]` | `[5]T`（配列） | 長さが型に含まれる。長さが違えば別の型 |
+| `new List<T>(capacity)` | `make([]T, 0, capacity)` | 第2引数が長さ、第3引数が容量 |
+| `list.Add(x)` | `list = append(list, x)` | **代入し直しが必要** |
+
+`append`が代入を伴うのは、伸ばすときに別のメモリへ移ることがあり、戻り値を受け取らないと
+反映されないため。`list.Add(x)`の感覚で`append(list, x)`と書き捨てると要素が増えない。
