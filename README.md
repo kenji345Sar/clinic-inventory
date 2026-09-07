@@ -4,7 +4,7 @@
 
 **今どこまで進んでいて、何が課題で、次に何をやるかは [docs/status_log.md](docs/status_log.md) を参照。**
 
-Goの構文に慣れていない場合は [docs/go/go-for-csharp.md](docs/go/go-for-csharp.md)（C#経験者のためのGo読み方ノート。petty-cashとの対応表）から読むとよい。リクエストがDBまで届く仕組みは [docs/go/request-to-sql-flow.md](docs/go/request-to-sql-flow.md) を参照。
+Goの構文に慣れていない場合は [docs/go/go-for-csharp.md](docs/go/go-for-csharp.md)（C#経験者のためのGo読み方ノート。petty-cashとの対応表）から読むとよい。リクエストがDBまで届く仕組みは [docs/go/request-to-sql-flow.md](docs/go/request-to-sql-flow.md)、発注確定から発注CSVがS3に上がるまでは [docs/purchase-order-flow.md](docs/purchase-order-flow.md) を参照。
 
 ## 必要なもの
 

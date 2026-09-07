@@ -121,6 +121,7 @@
 | テーブル定義 | [architecture/database-schema.md](architecture/database-schema.md) |
 | 認証・認可 | [architecture/authentication.md](architecture/authentication.md) |
 | 要件・決定事項・未確定事項 | [requirements.md](requirements.md) |
+| 発注の流れ(カート→確定→発注CSVをS3へ) | [purchase-order-flow.md](purchase-order-flow.md) |
 | Goの読み方(C#経験者向け) | [go/go-for-csharp.md](go/go-for-csharp.md) / [go/request-to-sql-flow.md](go/request-to-sql-flow.md) |
 
 ---
