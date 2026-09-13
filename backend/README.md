@@ -1,6 +1,6 @@
 # clinic-inventory backend
 
-Go + gorm。設計方針は[../docs/requirements.md](../docs/requirements.md)と[../docs/architecture/domain-rules.md](../docs/architecture/domain-rules.md)を参照。
+Go + gorm。要件は[../docs/requirements.md](../docs/requirements.md)、コンテキストと業務ルールは[../docs/architecture/domain-rules.md](../docs/architecture/domain-rules.md)、レイヤー構成は下の「ディレクトリ構成」を参照。
 
 ## ビルド・テスト
 

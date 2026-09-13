@@ -109,7 +109,7 @@ func main() {
 	prochandler.New(saveDraftPurchaseOrder, confirmPurchaseOrder, removeDraftPurchaseOrder, purchaseOrderRepo).Register(protected)
 
 	// 卸ポータル向けAPI(/api/portal/...)。卸業者はまだAuth0アカウントを持たないため未認証で公開する
-	// (docs/requirements.md 8章「後続」。認証を入れる際はここにRequireAuth相当を差し込む)。
+	// (docs/architecture/authentication.md「卸ポータルの認証」。認証を入れる際はここにRequireAuth相当を差し込む)。
 	portal := http.NewServeMux()
 	portalhandler.New(registerDistributorProduct, distributorRepo, distributorProductRepo, purchaseOrderRepo, clinicProductRepo, facilityRepo, facilityPriceRepo).Register(portal)
 

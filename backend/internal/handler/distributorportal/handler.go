@@ -2,7 +2,7 @@
 //
 // 卸業者担当者が自社の受注状況・商品マスタを見るための読み取り中心のAPI。
 // クリニック側(/api/facilities/...)とは別フロントエンド(distributor-portal)から叩かれる想定で、
-// 卸業者にはまだAuth0アカウントが無い(docs/requirements.md 8章「後続」)ため、
+// 卸業者にはまだAuth0アカウントが無い(docs/architecture/authentication.md「卸ポータルの認証」)ため、
 // このハンドラは cmd/api/main.go で RequireAuth を通さない別ルートに登録する(未認証)。
 // 既存の /api/distributors 系エンドポイントの認可方針には手を付けず、
 // ここは新規の /api/portal/... 配下にのみ生える。

@@ -26,7 +26,7 @@ func (t FacilityType) valid() bool {
 
 // Facility（クリニック）。組織コンテキストの集約ルート。
 // 必ずいずれかのCorporationに属する。Groupへの所属は任意
-// (requirements.md 3章の未確定事項のため、フィールドだけ用意している)。
+// (requirements.md「未確定事項」のため、フィールドだけ用意している)。
 type Facility struct {
 	id            shareddomain.ID
 	name          string

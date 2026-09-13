@@ -34,7 +34,7 @@ func (l OrderLine) Amount() int { return l.quantity * l.unitPrice }
 
 // PurchaseOrder（発注）。発注コンテキストの集約ルート。
 //
-// 1発注 = 1卸（docs/requirements.md「11. 決定事項」2026-07-20）。
+// 1発注 = 1卸（docs/requirements.md「決定事項」2026-07-20）。
 // 明細は全て同じ卸業者(distributorID)の商品であることを前提とするが、
 // 「そのクリニック商品が実際にこの卸の商品か」という他集約にまたがる検証はユースケース層で行う。
 // 集約自身は「数量は1以上」「確定には明細が1件以上必要」という自己完結する不変条件だけを守る。

@@ -1,7 +1,7 @@
 // Goバックエンド（cmd/api）の卸ポータル向けエンドポイント(/api/portal/...)への
 // サーバーサイドAPIクライアント。loader/actionからのみ使う。
 //
-// 卸業者はまだAuth0アカウントを持たない(docs/requirements.md 8章「後続」)ため、
+// 卸業者はまだAuth0アカウントを持たない(docs/architecture/authentication.md「卸ポータルの認証」)ため、
 // このアプリは未認証で動く。トークンは送らない。
 
 const API_BASE = process.env.API_BASE ?? "http://localhost:8080";
