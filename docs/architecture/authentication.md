@@ -2,7 +2,7 @@
 
 このドキュメントは、本システムの認証をなぜ・どう構成したか、および今後どうユーザーを運用するかをまとめる。
 
-最終更新: 2026-08-23
+最終更新: 2026-09-08
 
 ---
 
@@ -58,16 +58,177 @@ Auth0ダッシュボードで一度だけ行った初期設定:
 
 ---
 
-## 3. ログインの流れ(毎回)
+## 3. ログインの流れ(毎回) — ソースを辿る
 
-1. 未ログインでアプリを開くと `/login` にリダイレクト
-2. `/login` が Auth0 のログイン画面へ送る
-3. 利用者が Auth0 でログイン(またはサインアップ)
-4. Auth0 が `/auth/callback` にコード付きで戻す
-5. アプリのサーバがコードをトークンに交換し、**httpOnly Cookie のセッション**に保存
-6. 以後、アプリ→バックエンドの通信にトークンを添付し、バックエンドが検証して応答
+先に結論から言うと、**アプリのコードがAuth0へHTTPを投げている箇所は2つしかない**。
 
-トークンはブラウザのJavaScriptから触れない場所(httpOnly Cookie)に置くため、盗まれにくい。
+| Auth0への通信 | コード |
+|---|---|
+| `POST /oauth/token`(認可コード→トークンの交換) | [auth.server.ts](../../frontend/app/lib/auth.server.ts) `exchangeCodeForTokens` の `fetch` |
+| JWKS(署名検証用の公開鍵)の取得 | [auth.go](../../backend/internal/handler/httputil/auth.go) `jwks.NewCachingProvider` |
+
+残りの `getAuthorizeUrl` / `getLogoutUrl` は**URL文字列を組み立てて `redirect()` に渡すだけ**で、通信するのはブラウザ。
+この区別を押さえたうえで、関数の呼び出し順に追う。
+
+### 3-1. 入口 — `home.tsx` の loader
+
+画面を開くと最初に動くのはコンポーネントではなく loader。その1行目が `requireAuth()`。
+
+```ts
+// frontend/app/routes/home.tsx
+export async function loader({ request }: Route.LoaderArgs) {
+  const { accessToken, user } = await requireAuth(request);   // ← ここで止まるか進むかが決まる
+  const facilities = await api.listFacilities(accessToken);
+  return { facilities, user };
+}
+```
+
+`requireAuth` はCookieのセッションを覗き、トークンが無ければ**値を返さず `throw` する**。
+
+```ts
+// frontend/app/lib/auth.server.ts
+if (!accessToken || !user || !expiresAt || Date.now() >= expiresAt - 60_000) {
+  throw redirect("/login");
+}
+```
+
+`return` ではなく `throw` なので、呼び出し側の loader は以降を実行しない。
+「未ログインならログイン画面へ」が各画面のif文ではなく**この1関数に集約**されているのはこの `throw` のため。
+
+### 3-2. `/login` — Auth0へ渡すURLを組み立てるだけ
+
+```ts
+// frontend/app/routes/login.tsx
+const state = crypto.randomUUID();
+session.set("oauthState", state);          // 後で照合するために自分のCookieへ控える
+return redirect(getAuthorizeUrl(state), {
+  headers: { "Set-Cookie": await commitSession(session) },
+});
+```
+
+`getAuthorizeUrl` の中身は `URLSearchParams` の組み立てと文字列結合だけで、`fetch` は無い。
+
+```ts
+// frontend/app/lib/auth.server.ts
+return `https://${env.auth0Domain}/authorize?${params.toString()}`;
+```
+
+ここで載せる `audience` が、**バックエンドが受け付ける相手**(`https://api.clinic-inventory`)を指定している。
+これを外すとAuth0はAPI用ではないトークンを返し、Go側の検証で401になる。
+
+### 3-3. `/auth/callback` — 唯一Auth0へ`fetch`する場所
+
+Auth0がブラウザを `?code=…&state=…` 付きで戻してくる。受け口の順序は「照合 → 交換」。
+
+```ts
+// frontend/app/routes/auth.callback.tsx
+const savedState = session.get("oauthState");
+if (!code || !returnedState || returnedState !== savedState) {
+  throw new Response("認証に失敗しました（state不一致）", { status: 400 });
+}
+const tokens = await exchangeCodeForTokens(code);
+```
+
+`exchangeCodeForTokens` が実際の通信。ここだけ `client_secret` を使う。
+
+```ts
+// frontend/app/lib/auth.server.ts
+const res = await fetch(`https://${env.auth0Domain}/oauth/token`, {
+  method: "POST",
+  body: JSON.stringify({
+    grant_type: "authorization_code",
+    client_id: env.auth0ClientId,
+    client_secret: env.auth0ClientSecret,   // ← ブラウザには絶対に出せない値
+    code,
+    redirect_uri: env.auth0CallbackUrl,
+  }),
+});
+```
+
+このファイルが `.server.ts` なのは飾りではなく、**バンドルされてブラウザへ配られないことの保証**。
+`code` を「引換券」として一度ブラウザ経由で受け取り、秘密を使う交換だけをサーバー間で行うのが認可コードフローの要点。
+
+### 3-4. セッションへ載せる
+
+```ts
+// frontend/app/routes/auth.callback.tsx
+session.set("accessToken", tokens.access_token);
+session.set("expiresAt", Date.now() + tokens.expires_in * 1000);
+session.set("user", decodeIdToken(tokens.id_token));
+session.unset("oauthState");               // 使い終わったstateは残さない
+return redirect("/", { headers: { "Set-Cookie": await commitSession(session) } });
+```
+
+`decodeIdToken` は **署名検証をせず** Base64をデコードしているだけ。
+Auth0からTLS越しに直接受け取った直後の値にしか使わないため([auth.server.ts](../../frontend/app/lib/auth.server.ts)のコメント)。
+画面右上に出るメールアドレスはここで取り出した `email` クレームで、DBのユーザー表由来ではない。
+
+Cookieの実体は [session.server.ts](../../frontend/app/lib/session.server.ts) の `createCookieSessionStorage`。
+`httpOnly: true` でブラウザのJSから読めず、`secrets: [env.sessionSecret]` で署名される。
+`maxAge` は8時間だが、**アクセストークン自体の寿命はAuth0側の設定で別に切れる**。
+両方を見る必要があるので、3-1の判定は `expiresAt` を持っている。
+
+### 3-5. 2周目の `home.tsx` — 今度は通る
+
+`requireAuth` がトークンを返し、`api.listFacilities(accessToken)` へ進む。
+
+```ts
+// frontend/app/lib/api.server.ts
+const authHeader = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+const res = await fetch(`${API_BASE}${path}`, { ...init, headers: { ...authHeader, ... } });
+```
+
+呼んでいるのはブラウザではなく**フロントのNodeプロセス**。
+そのためトークンがブラウザのJSに渡らず、ブラウザ→Goの直通が無いのでCORS設定も要らない。
+
+### 3-6. Go側 — Auth0への通信はJWKS取得だけ
+
+ルーティングの1行で `/api/` 配下がまとめてミドルウェアを通る。
+
+```go
+// backend/cmd/api/main.go
+root.Handle("/api/portal/", portal)                        // 卸ポータルは素通し(6章)
+root.Handle("/api/", httputil.RequireAuth(protected))
+```
+
+`RequireAuth` の中では、公開鍵を取りに行くプロバイダを**1回だけ**作る。
+
+```go
+// backend/internal/handler/httputil/auth.go
+provider := jwks.NewCachingProvider(issuerURL, 5*time.Minute)
+jwtValidator, err := validator.New(
+    provider.KeyFunc, validator.RS256, issuerURL.String(), []string{audience},
+    validator.WithCustomClaims(func() validator.CustomClaims { return &AppClaims{} }),
+    validator.WithAllowedClockSkew(time.Minute),
+)
+return middleware.CheckJWT(next)
+```
+
+`RequireAuth` は `main()` の組み立て時に一度呼ばれ、返ってきた `http.Handler` が常駐する。
+**リクエストごとに実行されるのは `CheckJWT` の内側だけ**で、そこはAuth0へ問い合わせない。
+公開鍵で署名を検証し、`issuer` と `audience` を突き合わせるローカル計算で完結する
+(だからAPIを何回叩いてもAuth0への通信は増えない)。
+
+検証を通ったクレームは `context` に載り、ハンドラは `AppClaimsFrom(r.Context())` で読む。
+
+### 3-7. 一覧が返り、画面になる
+
+```go
+// backend/internal/handler/organization/handler.go
+facilities, err := h.facilityRepo.FindAll(r.Context())
+if claims, ok := httputil.AppClaimsFrom(r.Context()); ok && claims.Role == httputil.RoleFacilityUser {
+    // 自分の所属クリニックだけに絞る
+}
+```
+
+現在ログイン中のユーザーには `role` を割り当てていないため `ok && ...` が偽になり、全件が返る(5章)。
+`facility_user` を設定すれば、この分岐で**一覧そのものが1件になる**。
+ここから先(repository → gorm → SQL)は [request-to-sql-flow.md 1章](../go/request-to-sql-flow.md#1-読み取りの1往復--クリニック一覧)。
+
+### 3-8. 補足
+
+- `AUTH_DISABLED=true` のときは 3-2〜3-4 が丸ごと動かない。フロントの `requireAuth` は固定の `DEV_USER` を返し、Goの `RequireAuth` は `next` をそのまま返して検証器を組み立てない。
+- ログアウトは [logout.tsx](../../frontend/app/routes/logout.tsx) が `destroySession` でCookieを捨て、`getLogoutUrl` でAuth0の `/v2/logout` へ送る。アプリ側だけ捨ててもAuth0にセッションが残り、次回ログイン画面が出ずに素通りしてしまう。
 
 ---
 
@@ -172,7 +333,7 @@ Auth0ダッシュボードで一度だけ行った初期設定:
 卸業者担当者は「自社と契約しているクリニックのデータのみ閲覧、更新は不可」というルール
 ([domain-rules.md](domain-rules.md)の卸ポータルコンテキスト)。ただし**契約を表すデータが未実装**のため、
 1〜5を全て終えても「自社のデータだけ見せる」までしか絞れず、「契約しているクリニックだけ」は
-実現できない([requirements.md 9章](../requirements.md#9-未確定事項次に詰める))。
+実現できない([requirements.md 未確定事項](../requirements.md#未確定事項))。
 
 なお現状、卸ポータルのAPIには`POST /api/portal/distributors/{id}/products`(卸商品の登録)が生えており、
 「閲覧のみ」というルールと矛盾している。認証を入れる際にこのエンドポイントの要否も判断する。
