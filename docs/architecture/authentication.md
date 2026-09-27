@@ -48,8 +48,11 @@ Auth0ダッシュボードで一度だけ行った初期設定:
 | 項目 | 内容 |
 |---|---|
 | ログイン方法 | **Googleログイン**(`管理者のGoogleアカウント`)。メール+パスワードは設定していないため、パスワード欄に何を入れても通らない |
-| MFA(2要素認証) | **必須**。Auth0側の仕様でスキップできない。Google Authenticatorに`Auth0: 管理者のGoogleアカウント`として登録済み(2026-08-23) |
+| MFA(2要素認証) | **必須**。Auth0側の仕様でスキップできない。Google Authenticatorに`Auth0: 管理者のGoogleアカウント`として登録済み |
 | 毎回の手順 | 「Googleで続ける」→ Google Authenticatorの6桁コードを入力。**QRコードの読み取りは初回だけ**で、次回以降は不要 |
+| Chromeのプロファイル | `管理者のGoogleアカウント`でログインしているプロファイルから開く。別のGoogleアカウントのプロファイルで「Googleで続ける」を押すと、そのアカウントに紐づく別のAuth0アカウントのMFAを求められ、手元に無いコードを要求されて先へ進めない |
+| Authenticatorのアカウント | Google Authenticatorは右上のアイコンでGoogleアカウントを切り替えられ、一覧はアカウントごとに別。`管理者のGoogleアカウント`に切り替えないと`Auth0: ...`の項目が出てこない。同じ項目が2つ並んでいても同じコードなら重複登録なので、どちらを使ってもよい |
+| パスキー登録の案内 | ログイン後に「パスキーを保存する場所を選択」が出ることがある。任意なので「後でリマインダーを送信」や、失敗画面の「結構です」で飛ばしてよい。Googleパスワードマネージャーに保存すると、別の端末ではGoogleのPINを求められる |
 | リカバリコード | スマホを失くした場合の最後の手段。保管場所は各自で管理する(**このリポジトリには置かない**) |
 
 注意: ここで言う`管理者のGoogleアカウント`は**テナントの持ち主(管理者)のアカウント**で、
@@ -229,6 +232,7 @@ if claims, ok := httputil.AppClaimsFrom(r.Context()); ok && claims.Role == httpu
 
 - `AUTH_DISABLED=true` のときは 3-2〜3-4 が丸ごと動かない。フロントの `requireAuth` は固定の `DEV_USER` を返し、Goの `RequireAuth` は `next` をそのまま返して検証器を組み立てない。
 - ログアウトは [logout.tsx](../../frontend/app/routes/logout.tsx) が `destroySession` でCookieを捨て、`getLogoutUrl` でAuth0の `/v2/logout` へ送る。アプリ側だけ捨ててもAuth0にセッションが残り、次回ログイン画面が出ずに素通りしてしまう。
+- Auth0のレート制限はほぼ気にしなくてよい。Auth0と通信するのはログイン時のトークン交換と、5分キャッシュのJWKS取得だけで、APIを呼ぶたびには通信しない。5章のPost-Login Actionもログイン時に1回動くだけで、`event.user.app_metadata` を読むので外部へ通信しない。Action の中で Management API を呼ぶように変えると、ログインのたびに制限の厳しい Management API を叩くことになり、そこが最初に詰まる。
 
 ---
 
@@ -249,6 +253,9 @@ if claims, ok := httputil.AppClaimsFrom(r.Context()); ok && claims.Role == httpu
 ### (C) ソーシャルログイン(Google等)
 - 「Continue with Google」で Google アカウントでそのままログイン。
 - アカウント作成の手間が無い。社内でGoogle Workspaceを使っているなら便利。
+- 現在、My App の「接続」タブで `Username-Password-Authentication`(メール+パスワード)と `google-oauth2`(Google)の**両方がオン**になっている。ログイン画面には両方のボタンが出る。
+- **同じメールアドレスでも、ログイン方法が違えば別ユーザーになる。** メール+パスワードのユーザーは `auth0|...`、Googleのユーザーは `google-oauth2|...` という別の user_id を持つ。ユーザー詳細の Raw JSON の `identities` に、どのログイン方法で作られたかが残る。
+- メール+パスワードで登録済みの人が「Googleで続ける」を押すと、`app_metadata` が空の2人目が作られる。2人目は role が無いので、5章の絞り込みが効かず全クリニックが見えてしまう。Googleログインを使わないなら、「接続」タブで `google-oauth2` をオフにしておく。
 
 > つまり「1人ずつ手作業で登録」だけではない。セルフサインアップやソーシャルを使えば、
 > 管理者が1件ずつ作る必要はない。運用方針(誰でも登録可か、管理者承認制か)で選ぶ。
@@ -263,7 +270,9 @@ if claims, ok := httputil.AppClaimsFrom(r.Context()); ok && claims.Role == httpu
 
 今: ログインさえできれば全クリニックが見える。クリニックごとに絞り込む仕組みはコードとしては用意した([auth.go](../../backend/internal/handler/httputil/auth.go))が、Auth0側で「このユーザーはこのクリニック」と設定するまでは効かない。
 
-理由: ログインアカウントは本人がセルフサインアップできても、「この人はどのクリニックの担当か」は本人の自己申告に任せられない(なりすませてしまう)。だから管理者がAuth0側で1人ずつ割り当てる必要があり、その作業がまだ済んでいない。
+理由: ログインアカウントは本人がセルフサインアップできても、「この人はどのクリニックの担当か」は本人の自己申告に任せられない(なりすませてしまう)。だから管理者がAuth0側で1人ずつ割り当てる必要がある。
+
+現在の設定: 登録ユーザーは管理者1人(`auth0|...`、メール+パスワード)で、`app_metadata` は `{ "role": "admin" }`。Post-Login Action `add-role-claims` も追加済み。`facility_user` のユーザーはまだいないので、実際に絞り込みが効いている利用者はいない。
 
 ### 有効にする手順(Auth0ダッシュボード、3ステップ)
 
@@ -274,7 +283,8 @@ if claims, ok := httputil.AppClaimsFrom(r.Context()); ok && claims.Role == httpu
    { "role": "facility_user", "facility_id": "38057321-88d6-4a6c-8820-0da36fdd3766" }
    ```
    管理者にする場合は `{ "role": "admin" }` だけでよい(全クリニックが見える)。
-2. **Actions → Flows → Login** にPost-Login Actionを追加し、上記の値をアクセストークンのカスタムクレームへ転記する。
+   ダッシュボードの「詳細」タブでは見つけにくい。**「Raw JSON」タブ**の `"app_metadata"` を見るのが確実(未設定ならキー自体が無い)。
+2. **アクション → トリガー → post-login** にPost-Login Actionを追加し、上記の値をアクセストークンのカスタムクレームへ転記する(このテナントでは `add-role-claims` という名前で追加済み)。
    ```js
    exports.onExecutePostLogin = async (event, api) => {
      const { role, facility_id } = event.user.app_metadata;
