@@ -8,6 +8,9 @@
 [go/request-to-sql-flow.md](go/request-to-sql-flow.md) の1〜2章にある。S3のバケット構成や
 認証情報の詳細は別リポジトリ`clinic-inventory-csv-functions`の`docs/s3-storage.md`を参照。
 
+このドキュメントは**今の実装**を追ったもの。確定をDBに保存してから別の処理で卸ごとの形式に変換して送る形へ移す設計は
+[purchase-order-export.md](purchase-order-export.md)にある(未実装)。
+
 | 画面の操作 | HTTPメソッド + パス | handler | ユースケース | DBに起きること |
 |---|---|---|---|---|
 | カートに追加 | `POST /api/facilities/{facilityId}/orders` | `postOrder` | `SaveDraftPurchaseOrderUseCase` | 下書きをINSERT、既にあればUPDATE |
