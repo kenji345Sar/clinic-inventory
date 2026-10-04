@@ -110,11 +110,31 @@ uc.purchaseOrderRepo.Update(ctx, order)
 |---|---|---|
 | ① | [facility-orders.tsx:278](../frontend/app/routes/facility-orders.tsx#L278) | カート内カードの`<button name="intent" value="confirm">発注する</button>`をsubmit |
 | ② | [facility-orders.tsx:63](../frontend/app/routes/facility-orders.tsx#L63) | `action`が`intent`で分岐し、`api.confirmPurchaseOrder(...)`を呼ぶ |
-| ③ | [api.server.ts:146](../frontend/app/lib/api.server.ts#L146) | `POST /api/facilities/{facilityId}/orders/{orderId}/confirm` を発行 |
-| ④ | [main.go:117](../backend/cmd/api/main.go#L117) | `root.Handle("/api/", httputil.RequireAuth(protected))` で認証を通過 |
+| ③ | [api.server.ts:155](../frontend/app/lib/api.server.ts#L155) | `POST /api/facilities/{facilityId}/orders/{orderId}/confirm` を発行 |
+| ④ | [main.go:124](../backend/cmd/api/main.go#L124) | `root.Handle("/api/", httputil.RequireAuth(protected))` で認証を通過 |
 | ⑤ | [handler.go:39](../backend/internal/handler/procurement/handler.go#L39) | `Register`の登録パターンに一致し、`confirmOrderHandler`が呼ばれる |
-| ⑥ | [handler.go:138](../backend/internal/handler/procurement/handler.go#L138) | 認可チェックと`facilityId`/`orderId`のパース（変換だけ） |
-| ⑦ | [handler.go:153](../backend/internal/handler/procurement/handler.go#L153) | `h.confirmOrder.Execute(...)` → [confirm_purchase_order.go:48](../backend/internal/application/procurement/confirm_purchase_order.go#L48) |
+| ⑥ | [handler.go:138](../backend/internal/handler/procurement/handler.go#L138) | 認可チェックと、URLから`facilityId`/`orderId`を取り出してID型に変換（変換だけ） |
+| ⑦ | [handler.go:153](../backend/internal/handler/procurement/handler.go#L153) | ⑥のIDを`ConfirmPurchaseOrderInput`に詰めて`h.confirmOrder.Execute(...)`を呼ぶ → [confirm_purchase_order.go:51](../backend/internal/application/procurement/confirm_purchase_order.go#L51) |
+
+⑤の「登録パターン」は、ボタンを押したときではなく**アプリ起動時に1回**登録されている
+（[main.go:109](../backend/cmd/api/main.go#L109)が`Register`を呼び、[handler.go:39](../backend/internal/handler/procurement/handler.go#L39)の`mux.HandleFunc`でURLと関数を対応づける）。
+ボタンを押すたびに起きるのは、届いたURLをその対応表で引いて`confirmOrderHandler`を動かすところから。
+
+⑦で詰めた箱が、ユースケース側では引数`in`として届く。
+
+```go
+// handler.go:153 — 詰める側
+h.confirmOrder.Execute(r.Context(), procapp.ConfirmPurchaseOrderInput{
+	FacilityID: facilityID, // URLの {facilityId}
+	OrderID:    orderID,    // URLの {orderId}
+})
+
+// confirm_purchase_order.go:51 — 受け取る側
+func (uc *ConfirmPurchaseOrderUseCase) Execute(ctx context.Context, in ConfirmPurchaseOrderInput) ...
+```
+
+だから`Execute`の中の`in.OrderID`（54行目）・`in.FacilityID`（58行目）は、どちらも「URLに入っていたID」のこと。
+値の出どころはフロントが送ったURLだが、`ConfirmPurchaseOrderInput`に詰めるのはhandlerで、フロントはこの型を知らない。
 
 読むときに迷いやすいのが④で、**認証だけは`handler.go`に一切書かれていない**。`RequireAuth`は
 `main.go`でmuxごとラップするミドルウェアなので、`Register`にも各ハンドラ関数にも出てこない。
@@ -123,6 +143,47 @@ uc.purchaseOrderRepo.Update(ctx, order)
 もう1つが⑦で、`h.confirmOrder`というフィールドに実体が入るのは`main.go`である点。
 呼ぶ場所（handler）と用意する場所（main.go）が離れているのはDIコンテナが無いためで、
 配線の追い方は[`go-for-csharp.md`の8章](go/go-for-csharp.md)にまとめてある。
+
+### Laravelで言うと
+
+| # | このプロジェクト | 役割 | Laravel |
+|---|---|---|---|
+| 起動時 | [main.go:109](../backend/cmd/api/main.go#L109) `.Register(protected)` | 起動時にルートを読み込む | `bootstrap/app.php`（古い版は`RouteServiceProvider`）が`routes/api.php`を読み込む。自分では書かない |
+| 起動時 | main.goでリポジトリを作ってユースケースに渡す | 配線 | サービスコンテナが自動で注入する。インターフェースを使う場合だけ`AppServiceProvider`に`bind(PurchaseOrderRepositoryInterface::class, EloquentPurchaseOrderRepository::class)`を書く |
+| ①〜③ | [facility-orders.tsx:57-64](../frontend/app/routes/facility-orders.tsx#L57-L64) `intent`で分岐してAPIを呼ぶ | フロントの中継 | Bladeのフォームが直接Laravelのルートに送るので、この層は無い。`intent`の分岐はControllerの中か、ルートを分けて表す |
+| ④ | [main.go:124](../backend/cmd/api/main.go#L124) `RequireAuth(...)` | ログイン確認 | `->middleware('auth:sanctum')` |
+| ⑤ | [handler.go:39](../backend/internal/handler/procurement/handler.go#L39) `mux.HandleFunc("POST /api/.../confirm", ...)` | URLと関数の対応 | `routes/api.php` の `Route::post('/facilities/{facility}/orders/{order}/confirm', [PurchaseOrderController::class, 'confirm']);` |
+| ⑥ | [handler.go:138](../backend/internal/handler/procurement/handler.go#L138) `confirmOrderHandler` | 受け口 | Controllerの`confirm()`メソッド |
+| ⑥ | [handler.go:139](../backend/internal/handler/procurement/handler.go#L139) `AuthorizeFacility` | このクリニックを操作してよいか | Policy / Gate（`$this->authorize(...)`） |
+| ⑥ | [handler.go:143-151](../backend/internal/handler/procurement/handler.go#L143-L151) `PathValue` → `ParseID` | URLからIDを取り出す | メソッド引数 `confirm(string $facility, string $order)` に自動で入る |
+| ⑦ | `ConfirmPurchaseOrderInput{...}` | ユースケースへの箱 | 自前のDTOクラス（Laravel標準の仕組みは無い） |
+| ⑦ | `ConfirmPurchaseOrderUseCase.Execute` | 手順を並べる | 自前のService / Actionクラス（`app/Actions/ConfirmPurchaseOrder.php`など） |
+
+Laravelのルートモデルバインディングに`scopeBindings()`を付けると、
+[confirm_purchase_order.go:54](../backend/internal/application/procurement/confirm_purchase_order.go#L54)の`FindByID`と
+[58行目](../backend/internal/application/procurement/confirm_purchase_order.go#L58)の「その発注がそのクリニックのものか」の比較を、Laravelが自動で行う。
+
+```php
+Route::post('/facilities/{facility}/orders/{order}/confirm', ...)->scopeBindings();
+
+public function confirm(Facility $facility, PurchaseOrder $order) { ... }  // 違うクリニックの発注なら404
+```
+
+このとき渡ってくる`$order`はEloquentモデルで、`$order->status = 'confirmed'; $order->save();`のように
+どこからでも状態を書き換えて保存できる。`PurchaseOrder`の`Confirm()`のように、ルールを通らないと状態を変えられない作りにはなっていない。
+
+ユースケースはフレームワークの機能ではなく自分で書くクラスなので（このプロジェクトの`ConfirmPurchaseOrderUseCase`も同じ）、
+Laravelでも書ける。Laravelでの書き方は2通りある。
+
+| | A. Laravel標準の書き方 | B. このプロジェクトと同じ形 |
+|---|---|---|
+| Controllerが受け取るもの | Eloquentモデル `PurchaseOrder $order`（ルートモデルバインディング） | IDの文字列 `string $order` |
+| 発注をDBから取ってくる人 | Laravel（自動） | ユースケースの中のリポジトリ（[54行目](../backend/internal/application/procurement/confirm_purchase_order.go#L54)と同じ） |
+| 「このクリニックの発注か」のチェック | `scopeBindings()`（自動） | ユースケースの中で比較（[58行目](../backend/internal/application/procurement/confirm_purchase_order.go#L58)と同じ） |
+| 「明細0件は確定できない」ルールの置き場所 | Eloquentモデルにメソッドを足す、またはControllerに書く | ドメインのクラス（[purchase_order.go:95](../backend/internal/domain/procurement/purchase_order.go#L95)の`Confirm()`と同じ） |
+| 書く量 | 少ない | 多い |
+
+Bの形にする場合は、ルートモデルバインディングの自動取得は使わず、IDだけ受け取ってユースケースの中でリポジトリから取得する。
 
 ## 5. 往復Bのユースケース: 確定 → S3アップロード → 保存、の順序が肝
 
@@ -142,7 +203,9 @@ confirmedAt := time.Now()
 order.Confirm(confirmedAt)  // 明細0件ならここでエラー
 
 // 手順4: 確定したのでCSVをS3にアップロード（ここが今回の副作用）
-uc.csvUploader.Upload(ctx, order, facility.Name(), confirmedAt, csvLines)
+//        S3のフォルダを卸コードで分けるので、発注先の卸も引いてくる
+distributor, _ := uc.distributorRepo.FindByID(ctx, order.DistributorID())
+uc.csvUploader.Upload(ctx, order, distributor.Code(), facility.Name(), confirmedAt, csvLines)
 //   失敗したら return error でここで打ち切り → 次のDB保存に進まない
 
 // 手順5: アップロード成功後にようやくDB保存
@@ -158,6 +221,44 @@ S3アップロードが失敗したらDBには保存しない（確定したの�
 なお`order.Confirm()`はメモリ上の集約を確定状態に変えるだけで、この時点ではまだDBに何も書いていない。
 だから手順4で失敗しても「確定が漏れる」のではなく、単にUPDATEが実行されずカートに残るだけで済む。
 
+### ユースケースと集約ルートの分担
+
+上のコードには、似た名前のものが3つ出てくる。
+
+| 名前 | 何か | 置き場所 |
+|---|---|---|
+| 発注ID（`in.OrderID`） | 発注1件を指す番号。画面のボタンが持っていた`orderId`がURLに乗って届き、handlerが詰める（[handler.go:155](../backend/internal/handler/procurement/handler.go#L155)） | — |
+| 集約ルート（`order`、型は`*PurchaseOrder`） | 発注1件そのもの。状態・明細を持ち、「明細0件は確定できない」などのルールも自分で持つ。発注の数だけ存在する | [domain/procurement/purchase_order.go:41](../backend/internal/domain/procurement/purchase_order.go#L41) |
+| ユースケース（`ConfirmPurchaseOrderUseCase`） | 「取ってくる → ルールを呼ぶ → 送る → 保存する」の手順を並べるもの。発注のデータは持たず、リポジトリやアップローダーを持つ | [application/procurement/confirm_purchase_order.go](../backend/internal/application/procurement/confirm_purchase_order.go) |
+
+`PurchaseOrder`は種類としてはエンティティ（IDを持つドメインの型）で、「集約ルート」はその役割の名前。
+集約は「発注 + その明細`OrderLine`たち」という、一緒に変えて一緒に保存するまとまりを指し、
+そのまとまりに外から触るときの入口が集約ルートの`PurchaseOrder`になる。
+
+`Execute`の中で集約ルートに触るのは次の行だけ。
+
+| 行 | コード | 何をしているか | 実際に動くソース |
+|---|---|---|---|
+| [54](../backend/internal/application/procurement/confirm_purchase_order.go#L54) | `purchaseOrderRepo.FindByID(ctx, in.OrderID)` | 発注IDを渡して、集約ルートを受け取る。リポジトリがDBの発注と明細を読んで`PurchaseOrder`に組み立てて返す | [purchase_order_repository.go:82](../backend/internal/infrastructure/procurement/purchase_order_repository.go#L82)（インターフェース経由） |
+| [58](../backend/internal/application/procurement/confirm_purchase_order.go#L58) | `order.FacilityID()` | 読む: URLの施設と一致するか | [purchase_order.go:108](../backend/internal/domain/procurement/purchase_order.go#L108) |
+| [65](../backend/internal/application/procurement/confirm_purchase_order.go#L65) | `order.Lines()` | 読む: CSVの明細を作るため | [purchase_order.go:116](../backend/internal/domain/procurement/purchase_order.go#L116) |
+| [85](../backend/internal/application/procurement/confirm_purchase_order.go#L85) | `order.Confirm(confirmedAt)` | **状態を変える唯一の呼び出し**。ルールはここで判定される | [purchase_order.go:95](../backend/internal/domain/procurement/purchase_order.go#L95) |
+| [97](../backend/internal/application/procurement/confirm_purchase_order.go#L97) | `order.DistributorID()` | 読む: 発注先の卸を引くため | [purchase_order.go:109](../backend/internal/domain/procurement/purchase_order.go#L109) |
+| [101](../backend/internal/application/procurement/confirm_purchase_order.go#L101) | `csvUploader.Upload(ctx, order, ...)` | 丸ごと渡す: 卸向けファイルに変換して送る | [purchase_order_csv_uploader.go:25](../backend/internal/infrastructure/procurement/purchase_order_csv_uploader.go#L25)（インターフェース経由。先は§6） |
+| [106](../backend/internal/application/procurement/confirm_purchase_order.go#L106) | `purchaseOrderRepo.Update(ctx, order)` | 丸ごと渡す: 確定した状態を保存する | [purchase_order_repository.go:43](../backend/internal/infrastructure/procurement/purchase_order_repository.go#L43)（インターフェース経由） |
+
+`order.〜()`の4つは`PurchaseOrder`のメソッドなので、エディタで定義へジャンプすればそのまま
+[domain/procurement/purchase_order.go](../backend/internal/domain/procurement/purchase_order.go)に着く。
+「インターフェース経由」の3つは、ジャンプするとインターフェースの宣言
+（[repository.go:18](../backend/internal/domain/procurement/repository.go#L18)、[purchase_order_csv.go:26](../backend/internal/application/procurement/purchase_order_csv.go#L26)）で止まる。
+中身がどの構造体かは[main.go:92](../backend/cmd/api/main.go#L92)（リポジトリ）と[main.go:66](../backend/cmd/api/main.go#L66)（アップローダー）で作られ、
+[main.go:101](../backend/cmd/api/main.go#L101)でユースケースに渡されているので、そこを見ると上の表の「実際に動くソース」に辿り着ける。
+
+ユースケースは`status`を直接書き換えず、必ず`order.Confirm()`を呼ぶ。`PurchaseOrder`のフィールドは小文字で
+`domain/procurement`パッケージの外から書き換えられないので、ユースケースから確定させる手段は`Confirm()`しかない。
+もしユースケースが直接`confirmed`にできると、明細0件の発注や確定済みの発注の二重確定を止めるチェックを
+ユースケースごとに書く必要があり、1つでも書き忘れると空の発注CSVが卸に届く。
+
 ## 6. `Upload`の中身: インターフェースからAWS SDKまで4段
 
 §5の`uc.csvUploader.Upload(...)`はこのノートで唯一の外部サービス呼び出しだが、その1行の先は
@@ -165,15 +266,15 @@ S3アップロードが失敗したらDBには保存しない（確定したの�
 
 | 段 | ファイル | 何を知っているか |
 |---|---|---|
-| ① 呼び出し | [confirm_purchase_order.go:92](../backend/internal/application/procurement/confirm_purchase_order.go#L92) | 発注のことだけ。S3もCSVも知らない |
+| ① 呼び出し | [confirm_purchase_order.go:101](../backend/internal/application/procurement/confirm_purchase_order.go#L101) | 発注のことだけ。S3もCSVも知らない |
 | ② インターフェース | [purchase_order_csv.go:26](../backend/internal/application/procurement/purchase_order_csv.go#L26) | 「送る」という契約だけ |
-| ③ CSV変換とキー決定 | [purchase_order_csv_uploader.go:31](../backend/internal/infrastructure/procurement/purchase_order_csv_uploader.go#L31) | CSVの列順とS3のキー構造 |
+| ③ CSV変換とキー決定 | [purchase_order_csv_uploader.go:25](../backend/internal/infrastructure/procurement/purchase_order_csv_uploader.go#L25) | CSVの列順とS3のキー構造 |
 | ④ SDK呼び出し | [s3_uploader.go:24](../backend/internal/infrastructure/storage/s3_uploader.go#L24) | バケット名とAWS SDK。発注を知らない |
 
 ### ① ユースケースが持つのはインターフェース型
 
 ```go
-// confirm_purchase_order.go:24
+// confirm_purchase_order.go:25
 csvUploader PurchaseOrderCsvUploader  // ← interface。S3実装のことは知らない
 ```
 
@@ -182,7 +283,7 @@ csvUploader PurchaseOrderCsvUploader  // ← interface。S3実装のことは知
 ```go
 // purchase_order_csv.go:26
 type PurchaseOrderCsvUploader interface {
-	Upload(ctx context.Context, order *procdomain.PurchaseOrder, facilityName string,
+	Upload(ctx context.Context, order *procdomain.PurchaseOrder, distributorCode, facilityName string,
 		orderedAt time.Time, lines []PurchaseOrderCsvLine) error
 }
 ```
