@@ -21,6 +21,8 @@ type CreateFacilityInput struct {
 	Name          string
 	FacilityType  orgdomain.FacilityType
 	CorporationID shareddomain.ID
+	// NotificationEmail は発注確定のお知らせの宛先。任意（空なら送らない）。
+	NotificationEmail string
 }
 
 func (uc *CreateFacilityUseCase) Execute(ctx context.Context, in CreateFacilityInput) (*orgdomain.Facility, error) {
@@ -35,6 +37,9 @@ func (uc *CreateFacilityUseCase) Execute(ctx context.Context, in CreateFacilityI
 	// 手順2: 施設を組み立てる（名前・種別の検証はドメイン側）。
 	facility, err := orgdomain.NewFacility(in.Name, in.FacilityType, in.CorporationID)
 	if err != nil {
+		return nil, err
+	}
+	if err := facility.SetNotificationEmail(in.NotificationEmail); err != nil {
 		return nil, err
 	}
 	// 手順3: DBに保存する。

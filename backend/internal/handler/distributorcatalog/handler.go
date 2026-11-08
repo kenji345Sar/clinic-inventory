@@ -44,32 +44,40 @@ func (h *Handler) Register(mux *http.ServeMux) {
 type distributorResponse struct {
 	ID string `json:"id"`
 	// Code は卸コード。S3のフォルダ名(orders/{code}/, catalogs/{code}/)に使う。
-	Code string `json:"code"`
-	Name string `json:"name"`
+	Code              string `json:"code"`
+	Name              string `json:"name"`
+	NotificationEmail string `json:"notificationEmail"`
+}
+
+func toDistributorResponse(d *distdomain.Distributor) distributorResponse {
+	return distributorResponse{
+		ID:                d.ID().String(),
+		Code:              d.Code(),
+		Name:              d.Name(),
+		NotificationEmail: d.NotificationEmail(),
+	}
 }
 
 func (h *Handler) postDistributor(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Code string `json:"code"`
-		Name string `json:"name"`
+		Code              string `json:"code"`
+		Name              string `json:"name"`
+		NotificationEmail string `json:"notificationEmail"`
 	}
 	if err := httputil.DecodeJSON(r, &req); err != nil {
 		httputil.WriteError(w, err)
 		return
 	}
 	distributor, err := h.createDistributor.Execute(r.Context(), distapp.CreateDistributorInput{
-		Code: req.Code,
-		Name: req.Name,
+		Code:              req.Code,
+		Name:              req.Name,
+		NotificationEmail: req.NotificationEmail,
 	})
 	if err != nil {
 		httputil.WriteError(w, err)
 		return
 	}
-	httputil.WriteJSON(w, http.StatusCreated, distributorResponse{
-		ID:   distributor.ID().String(),
-		Code: distributor.Code(),
-		Name: distributor.Name(),
-	})
+	httputil.WriteJSON(w, http.StatusCreated, toDistributorResponse(distributor))
 }
 
 func (h *Handler) listDistributors(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +88,7 @@ func (h *Handler) listDistributors(w http.ResponseWriter, r *http.Request) {
 	}
 	res := make([]distributorResponse, 0, len(distributors))
 	for _, d := range distributors {
-		res = append(res, distributorResponse{ID: d.ID().String(), Code: d.Code(), Name: d.Name()})
+		res = append(res, toDistributorResponse(d))
 	}
 	httputil.WriteJSON(w, http.StatusOK, res)
 }

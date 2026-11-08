@@ -1,4 +1,4 @@
-# 発注フロー — カート追加から確定・S3アップロードまで
+# 発注フロー — カート追加から確定・S3アップロード・お知らせメールまで
 
 発注画面（`/facilities/:id/orders`）でボタンを押してから、卸に渡す発注CSVがS3に置かれるまでを追う。
 この画面は**1回の操作では発注が完了しない**。「カートに追加」で下書きを作り、「発注する」で確定する
@@ -185,7 +185,7 @@ Laravelでも書ける。Laravelでの書き方は2通りある。
 
 Bの形にする場合は、ルートモデルバインディングの自動取得は使わず、IDだけ受け取ってユースケースの中でリポジトリから取得する。
 
-## 5. 往復Bのユースケース: 確定 → S3アップロード → 保存、の順序が肝
+## 5. 往復Bのユースケース: 確定 → S3アップロード → 保存 → メール、の順序が肝
 
 ```go
 // internal/application/procurement/confirm_purchase_order.go の Execute
@@ -211,6 +211,10 @@ uc.csvUploader.Upload(ctx, order, distributor.Code(), facility.Name(), confirmed
 // 手順5: アップロード成功後にようやくDB保存
 uc.purchaseOrderRepo.Update(ctx, order)
 //   → UPDATE purchase_orders SET status='confirmed', confirmed_at=... WHERE id=...
+
+// 手順6: 医院と卸に確定のお知らせメールを送る（Amazon SES）
+uc.notifier.NotifyConfirmed(context.WithoutCancel(ctx), order, distributor, facility)
+//   失敗してもエラーは返さず、ログに残すだけ
 ```
 
 **手順4→5の順序が業務ルール**: 「発注CSVが卸に届いて初めて確定と言える」ため、
@@ -221,6 +225,15 @@ S3アップロードが失敗したらDBには保存しない（確定したの�
 なお`order.Confirm()`はメモリ上の集約を確定状態に変えるだけで、この時点ではまだDBに何も書いていない。
 だから手順4で失敗しても「確定が漏れる」のではなく、単にUPDATEが実行されずカートに残るだけで済む。
 
+**手順6はS3と逆で、失敗しても止めない**: メールはお知らせにすぎず、発注は手順5で確定済み。
+ここでエラーを返すと、画面には失敗と出るのに発注は確定している、という食い違いになり、
+利用者が同じ発注をもう一度作ってしまう。だから失敗はbackendのログに出すだけにしている。
+
+- 宛先は卸業者・クリニックそれぞれの`notificationEmail`（登録時に任意で指定）。空の相手には送らない
+- 送信元は環境変数`SES_FROM_ADDRESS`。SESで検証済みのアドレスでないと送れない
+- CSVは添付しない。卸が発注ファイルをどう受け取るかは未決（[purchase-order-export.md 9章](purchase-order-export.md#9-未決)）
+- `context.WithoutCancel`は、レスポンスを返す前に利用者が画面を閉じても送信を途中で打ち切らないため
+
 ### ユースケースと集約ルートの分担
 
 上のコードには、似た名前のものが3つ出てくる。
@@ -229,7 +242,7 @@ S3アップロードが失敗したらDBには保存しない（確定したの�
 |---|---|---|
 | 発注ID（`in.OrderID`） | 発注1件を指す番号。画面のボタンが持っていた`orderId`がURLに乗って届き、handlerが詰める（[handler.go:155](../backend/internal/handler/procurement/handler.go#L155)） | — |
 | 集約ルート（`order`、型は`*PurchaseOrder`） | 発注1件そのもの。状態・明細を持ち、「明細0件は確定できない」などのルールも自分で持つ。発注の数だけ存在する | [domain/procurement/purchase_order.go:41](../backend/internal/domain/procurement/purchase_order.go#L41) |
-| ユースケース（`ConfirmPurchaseOrderUseCase`） | 「取ってくる → ルールを呼ぶ → 送る → 保存する」の手順を並べるもの。発注のデータは持たず、リポジトリやアップローダーを持つ | [application/procurement/confirm_purchase_order.go](../backend/internal/application/procurement/confirm_purchase_order.go) |
+| ユースケース（`ConfirmPurchaseOrderUseCase`） | 「取ってくる → ルールを呼ぶ → 送る → 保存する → 知らせる」の手順を並べるもの。発注のデータは持たず、リポジトリやアップローダー・通知を持つ | [application/procurement/confirm_purchase_order.go](../backend/internal/application/procurement/confirm_purchase_order.go) |
 
 `PurchaseOrder`は種類としてはエンティティ（IDを持つドメインの型）で、「集約ルート」はその役割の名前。
 集約は「発注 + その明細`OrderLine`たち」という、一緒に変えて一緒に保存するまとまりを指し、
@@ -239,20 +252,21 @@ S3アップロードが失敗したらDBには保存しない（確定したの�
 
 | 行 | コード | 何をしているか | 実際に動くソース |
 |---|---|---|---|
-| [54](../backend/internal/application/procurement/confirm_purchase_order.go#L54) | `purchaseOrderRepo.FindByID(ctx, in.OrderID)` | 発注IDを渡して、集約ルートを受け取る。リポジトリがDBの発注と明細を読んで`PurchaseOrder`に組み立てて返す | [purchase_order_repository.go:82](../backend/internal/infrastructure/procurement/purchase_order_repository.go#L82)（インターフェース経由） |
-| [58](../backend/internal/application/procurement/confirm_purchase_order.go#L58) | `order.FacilityID()` | 読む: URLの施設と一致するか | [purchase_order.go:108](../backend/internal/domain/procurement/purchase_order.go#L108) |
-| [65](../backend/internal/application/procurement/confirm_purchase_order.go#L65) | `order.Lines()` | 読む: CSVの明細を作るため | [purchase_order.go:116](../backend/internal/domain/procurement/purchase_order.go#L116) |
-| [85](../backend/internal/application/procurement/confirm_purchase_order.go#L85) | `order.Confirm(confirmedAt)` | **状態を変える唯一の呼び出し**。ルールはここで判定される | [purchase_order.go:95](../backend/internal/domain/procurement/purchase_order.go#L95) |
-| [97](../backend/internal/application/procurement/confirm_purchase_order.go#L97) | `order.DistributorID()` | 読む: 発注先の卸を引くため | [purchase_order.go:109](../backend/internal/domain/procurement/purchase_order.go#L109) |
-| [101](../backend/internal/application/procurement/confirm_purchase_order.go#L101) | `csvUploader.Upload(ctx, order, ...)` | 丸ごと渡す: 卸向けファイルに変換して送る | [purchase_order_csv_uploader.go:25](../backend/internal/infrastructure/procurement/purchase_order_csv_uploader.go#L25)（インターフェース経由。先は§6） |
-| [106](../backend/internal/application/procurement/confirm_purchase_order.go#L106) | `purchaseOrderRepo.Update(ctx, order)` | 丸ごと渡す: 確定した状態を保存する | [purchase_order_repository.go:43](../backend/internal/infrastructure/procurement/purchase_order_repository.go#L43)（インターフェース経由） |
+| [60](../backend/internal/application/procurement/confirm_purchase_order.go#L60) | `purchaseOrderRepo.FindByID(ctx, in.OrderID)` | 発注IDを渡して、集約ルートを受け取る。リポジトリがDBの発注と明細を読んで`PurchaseOrder`に組み立てて返す | [purchase_order_repository.go:82](../backend/internal/infrastructure/procurement/purchase_order_repository.go#L82)（インターフェース経由） |
+| [64](../backend/internal/application/procurement/confirm_purchase_order.go#L64) | `order.FacilityID()` | 読む: URLの施設と一致するか | [purchase_order.go:108](../backend/internal/domain/procurement/purchase_order.go#L108) |
+| [71](../backend/internal/application/procurement/confirm_purchase_order.go#L71) | `order.Lines()` | 読む: CSVの明細を作るため | [purchase_order.go:116](../backend/internal/domain/procurement/purchase_order.go#L116) |
+| [91](../backend/internal/application/procurement/confirm_purchase_order.go#L91) | `order.Confirm(confirmedAt)` | **状態を変える唯一の呼び出し**。ルールはここで判定される | [purchase_order.go:95](../backend/internal/domain/procurement/purchase_order.go#L95) |
+| [103](../backend/internal/application/procurement/confirm_purchase_order.go#L103) | `order.DistributorID()` | 読む: 発注先の卸を引くため | [purchase_order.go:109](../backend/internal/domain/procurement/purchase_order.go#L109) |
+| [107](../backend/internal/application/procurement/confirm_purchase_order.go#L107) | `csvUploader.Upload(ctx, order, ...)` | 丸ごと渡す: 卸向けファイルに変換して送る | [purchase_order_csv_uploader.go:25](../backend/internal/infrastructure/procurement/purchase_order_csv_uploader.go#L25)（インターフェース経由。先は§6） |
+| [112](../backend/internal/application/procurement/confirm_purchase_order.go#L112) | `purchaseOrderRepo.Update(ctx, order)` | 丸ごと渡す: 確定した状態を保存する | [purchase_order_repository.go:43](../backend/internal/infrastructure/procurement/purchase_order_repository.go#L43)（インターフェース経由） |
+| [121](../backend/internal/application/procurement/confirm_purchase_order.go#L121) | `notifier.NotifyConfirmed(..., order, ...)` | 丸ごと渡す: 発注ID・確定日時・件数・合計金額をメール本文に使う | [purchase_order_notifier.go:29](../backend/internal/infrastructure/procurement/purchase_order_notifier.go#L29)（インターフェース経由。SESを呼ぶのは[mail/ses_sender.go](../backend/internal/infrastructure/mail/ses_sender.go)） |
 
 `order.〜()`の4つは`PurchaseOrder`のメソッドなので、エディタで定義へジャンプすればそのまま
 [domain/procurement/purchase_order.go](../backend/internal/domain/procurement/purchase_order.go)に着く。
-「インターフェース経由」の3つは、ジャンプするとインターフェースの宣言
-（[repository.go:18](../backend/internal/domain/procurement/repository.go#L18)、[purchase_order_csv.go:26](../backend/internal/application/procurement/purchase_order_csv.go#L26)）で止まる。
-中身がどの構造体かは[main.go:92](../backend/cmd/api/main.go#L92)（リポジトリ）と[main.go:66](../backend/cmd/api/main.go#L66)（アップローダー）で作られ、
-[main.go:101](../backend/cmd/api/main.go#L101)でユースケースに渡されているので、そこを見ると上の表の「実際に動くソース」に辿り着ける。
+「インターフェース経由」の4つは、ジャンプするとインターフェースの宣言
+（[repository.go:18](../backend/internal/domain/procurement/repository.go#L18)、[purchase_order_csv.go:26](../backend/internal/application/procurement/purchase_order_csv.go#L26)、[purchase_order_notifier.go:13](../backend/internal/application/procurement/purchase_order_notifier.go#L13)）で止まる。
+中身がどの構造体かは[main.go:99](../backend/cmd/api/main.go#L99)（リポジトリ）、[main.go:68](../backend/cmd/api/main.go#L68)（アップローダー）、[main.go:73](../backend/cmd/api/main.go#L73)（通知）で作られ、
+[main.go:108](../backend/cmd/api/main.go#L108)でユースケースに渡されているので、そこを見ると上の表の「実際に動くソース」に辿り着ける。
 
 ユースケースは`status`を直接書き換えず、必ず`order.Confirm()`を呼ぶ。`PurchaseOrder`のフィールドは小文字で
 `domain/procurement`パッケージの外から書き換えられないので、ユースケースから確定させる手段は`Confirm()`しかない。
@@ -371,13 +385,14 @@ AWSに一切触らずに検証できる。
   → フォームに「カートに追加しました。」+ 下の「カート」欄に卸ごとのカードが増える
 - 発注する 成功: 200 → 下書きが確定に変わるので、カート欄から消えて発注履歴に発注日時つきで並ぶ
 - 取消 成功: 204（レスポンスボディなし）→ カート欄からカードが消える
+- メール送信の失敗は画面に出ない（発注は確定済みのため）。backendのログにだけ残る
 - 失敗（卸不一致・S3アップロード失敗・確定済みの取消など）: `fmt.Errorf(...)`のメッセージが
   `httputil.WriteError`経由でエラーレスポンスになり、actionが捕まえて
   該当するフォーム／カートのカードに赤字表示（`intent`と`orderId`で表示先を絞っている）
 
 ## 発注書フォーマット
 
-要件として決まっている発注書の形式。**未実装**で、現在の発注確定は上の5〜6章の通り発注CSVをS3に置くところまで。
+要件として決まっている発注書の形式。**未実装**で、現在の発注確定は上の5〜6章の通り発注CSVをS3に置き、お知らせメールを送るところまで。
 
 - 出力形式: PDF
 - ヘッダ: 発注番号（クリニックごとの連番）、発注日、クリニック名・住所・電話番号、担当者名、卸業者名、クリニックの卸取引先コード

@@ -3,6 +3,7 @@ package procurement
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	distdomain "clinic-inventory/internal/domain/distributorcatalog"
@@ -13,9 +14,11 @@ import (
 )
 
 // ConfirmPurchaseOrderUseCase はカート（下書き）に積んだ発注を確定し、卸へ発注CSVを送る。
+// 確定後に医院と卸へお知らせのメールを送る。
 //
 // 「発注CSVが卸に届いて初めて確定と言える」というルールのため、CSVアップロードが失敗したら
 // 確定状態を永続化しない（docs/purchase-order-flow.md §5）。
+// メールはお知らせにすぎないので、失敗しても確定は取り消さない。
 type ConfirmPurchaseOrderUseCase struct {
 	purchaseOrderRepo      procdomain.PurchaseOrderRepository
 	distributorRepo        distdomain.DistributorRepository
@@ -23,6 +26,7 @@ type ConfirmPurchaseOrderUseCase struct {
 	clinicProductRepo      proddomain.ClinicProductRepository
 	facilityRepo           orgdomain.FacilityRepository
 	csvUploader            PurchaseOrderCsvUploader
+	notifier               PurchaseOrderNotifier
 }
 
 func NewConfirmPurchaseOrderUseCase(
@@ -32,6 +36,7 @@ func NewConfirmPurchaseOrderUseCase(
 	clinicProductRepo proddomain.ClinicProductRepository,
 	facilityRepo orgdomain.FacilityRepository,
 	csvUploader PurchaseOrderCsvUploader,
+	notifier PurchaseOrderNotifier,
 ) *ConfirmPurchaseOrderUseCase {
 	return &ConfirmPurchaseOrderUseCase{
 		purchaseOrderRepo:      purchaseOrderRepo,
@@ -40,6 +45,7 @@ func NewConfirmPurchaseOrderUseCase(
 		clinicProductRepo:      clinicProductRepo,
 		facilityRepo:           facilityRepo,
 		csvUploader:            csvUploader,
+		notifier:               notifier,
 	}
 }
 
@@ -105,6 +111,15 @@ func (uc *ConfirmPurchaseOrderUseCase) Execute(ctx context.Context, in ConfirmPu
 	// 手順5: アップロード成功後にようやく確定状態をDBに保存する。
 	if err := uc.purchaseOrderRepo.Update(ctx, order); err != nil {
 		return nil, err
+	}
+
+	// 手順6: 医院と卸に確定のお知らせを送る。
+	// 発注は手順5で確定済みなので、送信に失敗してもエラーは返さずログに残すだけにする。
+	// エラーを返すと、画面には失敗と出るのに発注は確定している、という食い違いになり、
+	// 利用者が同じ発注をもう一度作ってしまう。
+	// WithoutCancel は、レスポンスを返す前に利用者が画面を閉じても送信を途中で打ち切らないため。
+	if err := uc.notifier.NotifyConfirmed(context.WithoutCancel(ctx), order, distributor, facility); err != nil {
+		log.Printf("発注確定のお知らせメールを送れませんでした(orderId=%s): %v", order.ID().String(), err)
 	}
 	return order, nil
 }

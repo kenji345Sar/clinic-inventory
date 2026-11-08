@@ -20,6 +20,8 @@ type CreateDistributorInput struct {
 	// Code は卸コード。S3上のフォルダ名(orders/{code}/, catalogs/{code}/)になる。
 	Code string
 	Name string
+	// NotificationEmail は発注確定のお知らせの宛先。任意（空なら送らない）。
+	NotificationEmail string
 }
 
 func (uc *CreateDistributorUseCase) Execute(ctx context.Context, in CreateDistributorInput) (*distdomain.Distributor, error) {
@@ -36,6 +38,9 @@ func (uc *CreateDistributorUseCase) Execute(ctx context.Context, in CreateDistri
 	// 手順2: 卸業者を組み立てる（コード・名前の検証はドメイン側）。
 	distributor, err := distdomain.NewDistributor(in.Code, in.Name)
 	if err != nil {
+		return nil, err
+	}
+	if err := distributor.SetNotificationEmail(in.NotificationEmail); err != nil {
 		return nil, err
 	}
 

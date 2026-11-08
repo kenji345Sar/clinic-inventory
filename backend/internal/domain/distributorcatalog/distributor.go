@@ -18,10 +18,14 @@ var distributorCodePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 // 発注CSVを置く `orders/{卸コード}/...`、卸から商品マスタCSVを受け取る `catalogs/{卸コード}/...` の
 // どちらもこのコードでフォルダを分ける（clinic-inventory-csv-functions/docs/s3-storage.md）。
 // UUIDではなくコードを使うのは、卸業者自身にフォルダを案内する場面で人が読めるようにするため。
+//
+// notificationEmail（通知先メールアドレス）は任意。発注確定のお知らせを送る宛先で、
+// 空なら送らない。
 type Distributor struct {
-	id   shareddomain.ID
-	code string
-	name string
+	id                shareddomain.ID
+	code              string
+	name              string
+	notificationEmail string
 }
 
 func NewDistributor(code, name string) (*Distributor, error) {
@@ -37,11 +41,23 @@ func NewDistributor(code, name string) (*Distributor, error) {
 	return &Distributor{id: shareddomain.NewID(), code: code, name: name}, nil
 }
 
-func (d *Distributor) ID() shareddomain.ID { return d.id }
-func (d *Distributor) Code() string        { return d.code }
-func (d *Distributor) Name() string        { return d.name }
+func (d *Distributor) ID() shareddomain.ID       { return d.id }
+func (d *Distributor) Code() string              { return d.code }
+func (d *Distributor) Name() string              { return d.name }
+func (d *Distributor) NotificationEmail() string { return d.notificationEmail }
+
+// SetNotificationEmail は発注確定のお知らせを送る宛先を設定する。空文字は「送らない」。
+func (d *Distributor) SetNotificationEmail(email string) error {
+	if email != "" {
+		if err := shareddomain.ValidateEmail(email); err != nil {
+			return err
+		}
+	}
+	d.notificationEmail = email
+	return nil
+}
 
 // ReconstructDistributor は永続化データからDistributorを復元する。バリデーションは行わない。
-func ReconstructDistributor(id shareddomain.ID, code, name string) *Distributor {
-	return &Distributor{id: id, code: code, name: name}
+func ReconstructDistributor(id shareddomain.ID, code, name, notificationEmail string) *Distributor {
+	return &Distributor{id: id, code: code, name: name, notificationEmail: notificationEmail}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 
 	distapp "clinic-inventory/internal/application/distributorcatalog"
 	orgapp "clinic-inventory/internal/application/organization"
@@ -23,6 +24,7 @@ import (
 	"clinic-inventory/internal/infrastructure/database"
 	distinfra "clinic-inventory/internal/infrastructure/distributorcatalog"
 	inginfra "clinic-inventory/internal/infrastructure/distributorcsvingestion"
+	"clinic-inventory/internal/infrastructure/mail"
 	orginfra "clinic-inventory/internal/infrastructure/organization"
 	procinfra "clinic-inventory/internal/infrastructure/procurement"
 	prodinfra "clinic-inventory/internal/infrastructure/productcatalog"
@@ -65,6 +67,11 @@ func main() {
 	s3Client := s3.NewFromConfig(awsCfg)
 	orderCsvUploader := procinfra.NewPurchaseOrderCsvUploader(storage.NewS3Uploader(s3Client, s3Bucket()))
 
+	// 発注確定のお知らせメール。認証情報・リージョンはS3と同じawsCfgを使う。
+	// 送信元はSESで検証済みのアドレスをSES_FROM_ADDRESSで指定する(未設定なら送信のたびにログに失敗が出る)。
+	sesClient := sesv2.NewFromConfig(awsCfg)
+	orderNotifier := procinfra.NewPurchaseOrderNotifier(mail.NewSESSender(sesClient, os.Getenv("SES_FROM_ADDRESS")))
+
 	if err := db.AutoMigrate(
 		&orginfra.CorporationModel{},
 		&orginfra.FacilityModel{},
@@ -98,7 +105,7 @@ func main() {
 	registerDistributorProduct := distapp.NewRegisterDistributorProductUseCase(distributorProductRepo)
 	registerClinicProduct := prodapp.NewRegisterClinicProductUseCase(clinicProductRepo, distributorProductRepo, facilityPriceRepo)
 	saveDraftPurchaseOrder := procapp.NewSaveDraftPurchaseOrderUseCase(purchaseOrderRepo, distributorRepo, distributorProductRepo, clinicProductRepo)
-	confirmPurchaseOrder := procapp.NewConfirmPurchaseOrderUseCase(purchaseOrderRepo, distributorRepo, distributorProductRepo, clinicProductRepo, facilityRepo, orderCsvUploader)
+	confirmPurchaseOrder := procapp.NewConfirmPurchaseOrderUseCase(purchaseOrderRepo, distributorRepo, distributorProductRepo, clinicProductRepo, facilityRepo, orderCsvUploader, orderNotifier)
 	removeDraftPurchaseOrder := procapp.NewRemoveDraftPurchaseOrderUseCase(purchaseOrderRepo)
 
 	// 認証が必要な業務APIハンドラ

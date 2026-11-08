@@ -44,3 +44,44 @@ func TestNewDistributor(t *testing.T) {
 		}
 	})
 }
+
+func TestDistributor_SetNotificationEmail(t *testing.T) {
+	newDistributor := func(t *testing.T) *distdomain.Distributor {
+		t.Helper()
+		d, err := distdomain.NewDistributor("oroshi-b", "テスト卸業者")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return d
+	}
+
+	t.Run("正しい形式なら設定できる", func(t *testing.T) {
+		d := newDistributor(t)
+		if err := d.SetNotificationEmail("orders@oroshi-b.example.com"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if d.NotificationEmail() != "orders@oroshi-b.example.com" {
+			t.Errorf("NotificationEmail() = %q", d.NotificationEmail())
+		}
+	})
+
+	// 空は「お知らせを送らない」を表すので、エラーにしない。
+	t.Run("空文字は設定できる", func(t *testing.T) {
+		d := newDistributor(t)
+		if err := d.SetNotificationEmail(""); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("形式が正しくないとエラーで、値は変わらない", func(t *testing.T) {
+		for _, email := range []string{"oroshi-b", "@example.com", "卸B <orders@oroshi-b.example.com>"} {
+			d := newDistributor(t)
+			if err := d.SetNotificationEmail(email); err == nil {
+				t.Errorf("email %q は拒否されるべき", email)
+			}
+			if d.NotificationEmail() != "" {
+				t.Errorf("拒否したのに値が入っている: %q", d.NotificationEmail())
+			}
+		}
+	})
+}

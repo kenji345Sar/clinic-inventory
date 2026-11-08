@@ -27,12 +27,16 @@ func (t FacilityType) valid() bool {
 // Facility（クリニック）。組織コンテキストの集約ルート。
 // 必ずいずれかのCorporationに属する。Groupへの所属は任意
 // (requirements.md「未確定事項」のため、フィールドだけ用意している)。
+//
+// notificationEmail（通知先メールアドレス）は任意。発注確定のお知らせを送る宛先で、
+// 空なら送らない。
 type Facility struct {
-	id            shareddomain.ID
-	name          string
-	facilityType  FacilityType
-	corporationID shareddomain.ID
-	groupID       *shareddomain.ID
+	id                shareddomain.ID
+	name              string
+	facilityType      FacilityType
+	corporationID     shareddomain.ID
+	groupID           *shareddomain.ID
+	notificationEmail string
 }
 
 func NewFacility(name string, facilityType FacilityType, corporationID shareddomain.ID) (*Facility, error) {
@@ -58,20 +62,33 @@ func (f *Facility) Name() string                   { return f.name }
 func (f *Facility) Type() FacilityType             { return f.facilityType }
 func (f *Facility) CorporationID() shareddomain.ID { return f.corporationID }
 func (f *Facility) GroupID() *shareddomain.ID      { return f.groupID }
+func (f *Facility) NotificationEmail() string      { return f.notificationEmail }
 
 // AssignToGroup はクリニックをグループに所属させる。グループ運用が必要になった場合に使う。
 func (f *Facility) AssignToGroup(groupID shareddomain.ID) {
 	f.groupID = &groupID
 }
 
+// SetNotificationEmail は発注確定のお知らせを送る宛先を設定する。空文字は「送らない」。
+func (f *Facility) SetNotificationEmail(email string) error {
+	if email != "" {
+		if err := shareddomain.ValidateEmail(email); err != nil {
+			return err
+		}
+	}
+	f.notificationEmail = email
+	return nil
+}
+
 // ReconstructFacility は永続化データからFacilityを復元する。バリデーションは行わない
 // （すでに永続化された時点で妥当な状態であることが前提のため）。
-func ReconstructFacility(id shareddomain.ID, name string, facilityType FacilityType, corporationID shareddomain.ID, groupID *shareddomain.ID) *Facility {
+func ReconstructFacility(id shareddomain.ID, name string, facilityType FacilityType, corporationID shareddomain.ID, groupID *shareddomain.ID, notificationEmail string) *Facility {
 	return &Facility{
-		id:            id,
-		name:          name,
-		facilityType:  facilityType,
-		corporationID: corporationID,
-		groupID:       groupID,
+		id:                id,
+		name:              name,
+		facilityType:      facilityType,
+		corporationID:     corporationID,
+		groupID:           groupID,
+		notificationEmail: notificationEmail,
 	}
 }

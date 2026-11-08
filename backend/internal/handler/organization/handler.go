@@ -59,11 +59,12 @@ func (h *Handler) postCorporation(w http.ResponseWriter, r *http.Request) {
 }
 
 type facilityResponse struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	FacilityType  string  `json:"facilityType"`
-	CorporationID string  `json:"corporationId"`
-	GroupID       *string `json:"groupId"`
+	ID                string  `json:"id"`
+	Name              string  `json:"name"`
+	FacilityType      string  `json:"facilityType"`
+	CorporationID     string  `json:"corporationId"`
+	GroupID           *string `json:"groupId"`
+	NotificationEmail string  `json:"notificationEmail"`
 }
 
 func toFacilityResponse(f *orgdomain.Facility) facilityResponse {
@@ -73,19 +74,21 @@ func toFacilityResponse(f *orgdomain.Facility) facilityResponse {
 		groupID = &s
 	}
 	return facilityResponse{
-		ID:            f.ID().String(),
-		Name:          f.Name(),
-		FacilityType:  string(f.Type()),
-		CorporationID: f.CorporationID().String(),
-		GroupID:       groupID,
+		ID:                f.ID().String(),
+		Name:              f.Name(),
+		FacilityType:      string(f.Type()),
+		CorporationID:     f.CorporationID().String(),
+		GroupID:           groupID,
+		NotificationEmail: f.NotificationEmail(),
 	}
 }
 
 func (h *Handler) postFacility(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name          string `json:"name"`
-		FacilityType  string `json:"facilityType"`
-		CorporationID string `json:"corporationId"`
+		Name              string `json:"name"`
+		FacilityType      string `json:"facilityType"`
+		CorporationID     string `json:"corporationId"`
+		NotificationEmail string `json:"notificationEmail"`
 	}
 	if err := httputil.DecodeJSON(r, &req); err != nil {
 		httputil.WriteError(w, err)
@@ -97,9 +100,10 @@ func (h *Handler) postFacility(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	facility, err := h.createFacility.Execute(r.Context(), orgapp.CreateFacilityInput{
-		Name:          req.Name,
-		FacilityType:  orgdomain.FacilityType(req.FacilityType),
-		CorporationID: corporationID,
+		Name:              req.Name,
+		FacilityType:      orgdomain.FacilityType(req.FacilityType),
+		CorporationID:     corporationID,
+		NotificationEmail: req.NotificationEmail,
 	})
 	if err != nil {
 		httputil.WriteError(w, err)

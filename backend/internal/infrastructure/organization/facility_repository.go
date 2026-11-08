@@ -55,11 +55,12 @@ func toFacilityModel(f *orgdomain.Facility) FacilityModel {
 		groupID = &id
 	}
 	return FacilityModel{
-		ID:            uuid.UUID(f.ID()),
-		Name:          f.Name(),
-		FacilityType:  string(f.Type()),
-		CorporationID: uuid.UUID(f.CorporationID()),
-		GroupID:       groupID,
+		ID:                uuid.UUID(f.ID()),
+		Name:              f.Name(),
+		FacilityType:      string(f.Type()),
+		CorporationID:     uuid.UUID(f.CorporationID()),
+		GroupID:           groupID,
+		NotificationEmail: f.NotificationEmail(),
 	}
 }
 
@@ -75,5 +76,6 @@ func toDomainFacility(model FacilityModel) *orgdomain.Facility {
 		orgdomain.FacilityType(model.FacilityType),
 		shareddomain.ID(model.CorporationID),
 		groupID,
+		model.NotificationEmail,
 	)
 }

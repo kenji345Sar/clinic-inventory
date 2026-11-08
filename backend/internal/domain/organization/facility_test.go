@@ -59,3 +59,39 @@ func TestNewFacility(t *testing.T) {
 		}
 	})
 }
+
+func TestFacility_SetNotificationEmail(t *testing.T) {
+	newFacility := func(t *testing.T) *orgdomain.Facility {
+		t.Helper()
+		f, err := orgdomain.NewFacility("テストクリニック", orgdomain.FacilityTypeMedical, shareddomain.NewID())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return f
+	}
+
+	t.Run("正しい形式なら設定できる", func(t *testing.T) {
+		f := newFacility(t)
+		if err := f.SetNotificationEmail("clinic@example.com"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if f.NotificationEmail() != "clinic@example.com" {
+			t.Errorf("NotificationEmail() = %q", f.NotificationEmail())
+		}
+	})
+
+	// 空は「お知らせを送らない」を表すので、エラーにしない。
+	t.Run("空文字は設定できる", func(t *testing.T) {
+		f := newFacility(t)
+		if err := f.SetNotificationEmail(""); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("形式が正しくないとエラー", func(t *testing.T) {
+		f := newFacility(t)
+		if err := f.SetNotificationEmail("clinic.example.com"); err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+}

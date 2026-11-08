@@ -17,6 +17,8 @@ type FacilityModel struct {
 	FacilityType  string     `gorm:"column:facility_type;not null"`
 	CorporationID uuid.UUID  `gorm:"type:uuid;index;not null"`
 	GroupID       *uuid.UUID `gorm:"type:uuid"`
+	// NotificationEmail は発注確定のお知らせの宛先。空文字は「送らない」。
+	NotificationEmail string `gorm:"not null;default:''"`
 }
 
 func (FacilityModel) TableName() string { return "facilities" }

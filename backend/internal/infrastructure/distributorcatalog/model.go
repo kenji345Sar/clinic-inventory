@@ -8,6 +8,8 @@ type DistributorModel struct {
 	// Code は卸コード。S3のフォルダ名(orders/{code}/, catalogs/{code}/)に使うため一意。
 	Code string `gorm:"not null;uniqueIndex"`
 	Name string `gorm:"not null"`
+	// NotificationEmail は発注確定のお知らせの宛先。空文字は「送らない」。
+	NotificationEmail string `gorm:"not null;default:''"`
 }
 
 func (DistributorModel) TableName() string { return "distributors" }
