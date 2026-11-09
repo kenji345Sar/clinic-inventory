@@ -7,6 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.34
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.106.3
 	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.79.8
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.52.11
 	github.com/google/uuid v1.6.0
 	golang.org/x/text v0.31.0
 	gorm.io/driver/postgres v1.6.0

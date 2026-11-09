@@ -113,7 +113,7 @@ func (uc *ConfirmPurchaseOrderUseCase) Execute(ctx context.Context, in ConfirmPu
 		return nil, err
 	}
 
-	// 手順6: 医院と卸に確定のお知らせを送る。
+	// 手順6: 医院と卸に確定のお知らせを送る（SQS版の実装ならSQSに積むだけ）。
 	// 発注は手順5で確定済みなので、送信に失敗してもエラーは返さずログに残すだけにする。
 	// エラーを返すと、画面には失敗と出るのに発注は確定している、という食い違いになり、
 	// 利用者が同じ発注をもう一度作ってしまう。

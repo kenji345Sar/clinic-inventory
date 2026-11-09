@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	distapp "clinic-inventory/internal/application/distributorcatalog"
 	orgapp "clinic-inventory/internal/application/organization"
@@ -28,6 +29,7 @@ import (
 	orginfra "clinic-inventory/internal/infrastructure/organization"
 	procinfra "clinic-inventory/internal/infrastructure/procurement"
 	prodinfra "clinic-inventory/internal/infrastructure/productcatalog"
+	"clinic-inventory/internal/infrastructure/queue"
 	"clinic-inventory/internal/infrastructure/storage"
 )
 
@@ -67,10 +69,17 @@ func main() {
 	s3Client := s3.NewFromConfig(awsCfg)
 	orderCsvUploader := procinfra.NewPurchaseOrderCsvUploader(storage.NewS3Uploader(s3Client, s3Bucket()))
 
-	// 発注確定のお知らせメール。認証情報・リージョンはS3と同じawsCfgを使う。
-	// 送信元はSESで検証済みのアドレスをSES_FROM_ADDRESSで指定する(未設定なら送信のたびにログに失敗が出る)。
-	sesClient := sesv2.NewFromConfig(awsCfg)
-	orderNotifier := procinfra.NewPurchaseOrderNotifier(mail.NewSESSender(sesClient, os.Getenv("SES_FROM_ADDRESS")))
+	// 発注確定のお知らせ。NOTIFY_QUEUE_URLの有無で、渡す PurchaseOrderNotifier の実装を切り替える。
+	// ユースケースはインターフェースしか知らないので、ここを変えるだけで送り方が変わる。
+	var orderNotifier procapp.PurchaseOrderNotifier
+	if queueURL := os.Getenv("NOTIFY_QUEUE_URL"); queueURL != "" {
+		// SQSに発注IDを積むだけ。メールは通知ワーカー(cmd/notifyworker)が送り、失敗したら自動で再試行される。
+		orderNotifier = procinfra.NewPurchaseOrderQueueNotifier(queue.NewSQSQueue(sqs.NewFromConfig(awsCfg), queueURL))
+	} else {
+		// SESで直接送る。失敗してもログに残るだけで、送り直されない。
+		// 送信元はSESで検証済みのアドレスをSES_FROM_ADDRESSで指定する(未設定なら送信のたびにログに失敗が出る)。
+		orderNotifier = procinfra.NewPurchaseOrderNotifier(mail.NewSESSender(sesv2.NewFromConfig(awsCfg), os.Getenv("SES_FROM_ADDRESS")))
+	}
 
 	if err := db.AutoMigrate(
 		&orginfra.CorporationModel{},

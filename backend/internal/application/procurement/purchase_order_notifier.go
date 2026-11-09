@@ -10,6 +10,9 @@ import (
 
 // PurchaseOrderNotifier は発注が確定したことを医院と卸に知らせるポート。
 // 送信手段(SES等)に依存しないよう、実装は infrastructure 層に置く。
+// 実装は2つあり、cmd/api/main.go でどちらを渡すか選ぶ。
+//   - procinfra.PurchaseOrderNotifier: SESで直接送る
+//   - procinfra.PurchaseOrderQueueNotifier: SQSに積むだけ（送るのは cmd/notifyworker）
 type PurchaseOrderNotifier interface {
 	// NotifyConfirmed は医院・卸それぞれの通知先メールアドレスへお知らせを送る。
 	// 通知先が空の相手には送らない。

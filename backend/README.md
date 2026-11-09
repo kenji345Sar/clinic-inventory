@@ -39,6 +39,9 @@ createdb -h localhost -U "$(whoami)" clinic_inventory
 # APIサーバー（デフォルト :8080。PORTで変更可）
 CGO_ENABLED=0 go run ./cmd/api
 
+# 通知ワーカー（.env の NOTIFY_QUEUE_URL を設定したときだけ使う。SQSから取り出してお知らせメールを送る）
+./run-notifyworker.sh
+
 # 縦スライスの動作確認スクリプト（サーバーを立てずユースケースを直接実行）
 CGO_ENABLED=0 go run ./cmd/demo
 ```

@@ -111,13 +111,13 @@ uc.purchaseOrderRepo.Update(ctx, order)
 | ① | [facility-orders.tsx:278](../frontend/app/routes/facility-orders.tsx#L278) | カート内カードの`<button name="intent" value="confirm">発注する</button>`をsubmit |
 | ② | [facility-orders.tsx:63](../frontend/app/routes/facility-orders.tsx#L63) | `action`が`intent`で分岐し、`api.confirmPurchaseOrder(...)`を呼ぶ |
 | ③ | [api.server.ts:155](../frontend/app/lib/api.server.ts#L155) | `POST /api/facilities/{facilityId}/orders/{orderId}/confirm` を発行 |
-| ④ | [main.go:124](../backend/cmd/api/main.go#L124) | `root.Handle("/api/", httputil.RequireAuth(protected))` で認証を通過 |
+| ④ | [main.go:140](../backend/cmd/api/main.go#L140) | `root.Handle("/api/", httputil.RequireAuth(protected))` で認証を通過 |
 | ⑤ | [handler.go:39](../backend/internal/handler/procurement/handler.go#L39) | `Register`の登録パターンに一致し、`confirmOrderHandler`が呼ばれる |
 | ⑥ | [handler.go:138](../backend/internal/handler/procurement/handler.go#L138) | 認可チェックと、URLから`facilityId`/`orderId`を取り出してID型に変換（変換だけ） |
 | ⑦ | [handler.go:153](../backend/internal/handler/procurement/handler.go#L153) | ⑥のIDを`ConfirmPurchaseOrderInput`に詰めて`h.confirmOrder.Execute(...)`を呼ぶ → [confirm_purchase_order.go:51](../backend/internal/application/procurement/confirm_purchase_order.go#L51) |
 
 ⑤の「登録パターン」は、ボタンを押したときではなく**アプリ起動時に1回**登録されている
-（[main.go:109](../backend/cmd/api/main.go#L109)が`Register`を呼び、[handler.go:39](../backend/internal/handler/procurement/handler.go#L39)の`mux.HandleFunc`でURLと関数を対応づける）。
+（[main.go:125](../backend/cmd/api/main.go#L125)が`Register`を呼び、[handler.go:39](../backend/internal/handler/procurement/handler.go#L39)の`mux.HandleFunc`でURLと関数を対応づける）。
 ボタンを押すたびに起きるのは、届いたURLをその対応表で引いて`confirmOrderHandler`を動かすところから。
 
 ⑦で詰めた箱が、ユースケース側では引数`in`として届く。
@@ -148,10 +148,10 @@ func (uc *ConfirmPurchaseOrderUseCase) Execute(ctx context.Context, in ConfirmPu
 
 | # | このプロジェクト | 役割 | Laravel |
 |---|---|---|---|
-| 起動時 | [main.go:109](../backend/cmd/api/main.go#L109) `.Register(protected)` | 起動時にルートを読み込む | `bootstrap/app.php`（古い版は`RouteServiceProvider`）が`routes/api.php`を読み込む。自分では書かない |
+| 起動時 | [main.go:125](../backend/cmd/api/main.go#L125) `.Register(protected)` | 起動時にルートを読み込む | `bootstrap/app.php`（古い版は`RouteServiceProvider`）が`routes/api.php`を読み込む。自分では書かない |
 | 起動時 | main.goでリポジトリを作ってユースケースに渡す | 配線 | サービスコンテナが自動で注入する。インターフェースを使う場合だけ`AppServiceProvider`に`bind(PurchaseOrderRepositoryInterface::class, EloquentPurchaseOrderRepository::class)`を書く |
 | ①〜③ | [facility-orders.tsx:57-64](../frontend/app/routes/facility-orders.tsx#L57-L64) `intent`で分岐してAPIを呼ぶ | フロントの中継 | Bladeのフォームが直接Laravelのルートに送るので、この層は無い。`intent`の分岐はControllerの中か、ルートを分けて表す |
-| ④ | [main.go:124](../backend/cmd/api/main.go#L124) `RequireAuth(...)` | ログイン確認 | `->middleware('auth:sanctum')` |
+| ④ | [main.go:140](../backend/cmd/api/main.go#L140) `RequireAuth(...)` | ログイン確認 | `->middleware('auth:sanctum')` |
 | ⑤ | [handler.go:39](../backend/internal/handler/procurement/handler.go#L39) `mux.HandleFunc("POST /api/.../confirm", ...)` | URLと関数の対応 | `routes/api.php` の `Route::post('/facilities/{facility}/orders/{order}/confirm', [PurchaseOrderController::class, 'confirm']);` |
 | ⑥ | [handler.go:138](../backend/internal/handler/procurement/handler.go#L138) `confirmOrderHandler` | 受け口 | Controllerの`confirm()`メソッド |
 | ⑥ | [handler.go:139](../backend/internal/handler/procurement/handler.go#L139) `AuthorizeFacility` | このクリニックを操作してよいか | Policy / Gate（`$this->authorize(...)`） |
@@ -234,6 +234,40 @@ S3アップロードが失敗したらDBには保存しない（確定したの�
 - CSVは添付しない。卸が発注ファイルをどう受け取るかは未決（[purchase-order-export.md 9章](purchase-order-export.md#9-未決)）
 - `context.WithoutCancel`は、レスポンスを返す前に利用者が画面を閉じても送信を途中で打ち切らないため
 
+### お知らせの送り方: SESで直接送るか、SQSに積むか
+
+`uc.notifier`の中身は2通りあり、[cmd/api/main.go](../backend/cmd/api/main.go)が環境変数`NOTIFY_QUEUE_URL`の有無で選ぶ。
+ユースケースは`PurchaseOrderNotifier`インターフェースしか知らないので、どちらでもユースケースのコードは変わらない。
+
+| | `NOTIFY_QUEUE_URL`が空 | `NOTIFY_QUEUE_URL`あり |
+|---|---|---|
+| 渡す実装 | [PurchaseOrderNotifier](../backend/internal/infrastructure/procurement/purchase_order_notifier.go)（SES版） | [PurchaseOrderQueueNotifier](../backend/internal/infrastructure/procurement/purchase_order_queue_notifier.go)（SQS版） |
+| 確定のリクエストの中でやること | SESでメールを送る | SQSに`{"orderId": "..."}`を積むだけ |
+| メールを送るのは | backend API自身 | 通知ワーカー（[cmd/notifyworker](../backend/cmd/notifyworker/main.go)、別プロセス） |
+| SESが失敗したら | ログに残るだけ。送り直されない | メッセージがSQSに残り、時間をおいて自動で送り直される |
+| 起動するもの | `./run.sh`だけ | `./run.sh`と`./run-notifyworker.sh`の2つ |
+
+SQS版の流れ:
+
+```
+backend API: 確定 → S3 → DB保存 → SQSに発注IDを積む → 画面に返す
+                                        │
+通知ワーカー: SQSから受け取る → DBで発注・卸・医院を読む → SESで送る
+               ├ 成功 → メッセージを消す
+               └ 失敗 → 消さない → 可視性タイムアウト後にSQSがもう一度渡す
+                         └ キューに設定した回数失敗したら、SQSがDLQ（失敗置き場のキュー）へ移す
+```
+
+- メッセージに入れるのは発注IDだけ。本文はワーカーがDBから組み立てる。積んだ時点の値を入れると、
+  送るのが遅れたときにDBと違う内容のメールになる
+- ワーカーが呼ぶのは[SendOrderConfirmedNotificationUseCase](../backend/internal/application/procurement/send_order_confirmed_notification.go)。
+  こちらは確定のユースケースと違い、失敗したらエラーを返す。エラーならワーカーはメッセージを消さない
+- 実際にSESを呼ぶのは、SES版と同じ`PurchaseOrderNotifier`。ワーカーの中で使い回している
+- 同じメールが2回届くことがある。医院宛は送れて卸宛が失敗した場合、再試行で医院にもう一度送る。
+  SQS自体も、まれに同じメッセージを2回渡すことがある（標準キューは「少なくとも1回」届ける仕組み）
+- SQSへ積むこと自体が失敗したら、SES版と同じくログに残るだけ。DB保存と積み込みを必ず揃えるには、
+  発注と同じトランザクションで「未送信のお知らせ」をDBに書き、別の処理がそれをSQSへ流す形（アウトボックスパターン）が要る
+
 ### ユースケースと集約ルートの分担
 
 上のコードには、似た名前のものが3つ出てくる。
@@ -259,14 +293,14 @@ S3アップロードが失敗したらDBには保存しない（確定したの�
 | [103](../backend/internal/application/procurement/confirm_purchase_order.go#L103) | `order.DistributorID()` | 読む: 発注先の卸を引くため | [purchase_order.go:109](../backend/internal/domain/procurement/purchase_order.go#L109) |
 | [107](../backend/internal/application/procurement/confirm_purchase_order.go#L107) | `csvUploader.Upload(ctx, order, ...)` | 丸ごと渡す: 卸向けファイルに変換して送る | [purchase_order_csv_uploader.go:25](../backend/internal/infrastructure/procurement/purchase_order_csv_uploader.go#L25)（インターフェース経由。先は§6） |
 | [112](../backend/internal/application/procurement/confirm_purchase_order.go#L112) | `purchaseOrderRepo.Update(ctx, order)` | 丸ごと渡す: 確定した状態を保存する | [purchase_order_repository.go:43](../backend/internal/infrastructure/procurement/purchase_order_repository.go#L43)（インターフェース経由） |
-| [121](../backend/internal/application/procurement/confirm_purchase_order.go#L121) | `notifier.NotifyConfirmed(..., order, ...)` | 丸ごと渡す: 発注ID・確定日時・件数・合計金額をメール本文に使う | [purchase_order_notifier.go:29](../backend/internal/infrastructure/procurement/purchase_order_notifier.go#L29)（インターフェース経由。SESを呼ぶのは[mail/ses_sender.go](../backend/internal/infrastructure/mail/ses_sender.go)） |
+| [121](../backend/internal/application/procurement/confirm_purchase_order.go#L121) | `notifier.NotifyConfirmed(..., order, ...)` | 丸ごと渡す: SES版は発注ID・確定日時・件数・合計金額をメール本文に使う。SQS版は発注IDだけ積む | SES版は[purchase_order_notifier.go:29](../backend/internal/infrastructure/procurement/purchase_order_notifier.go#L29)、SQS版は[purchase_order_queue_notifier.go:30](../backend/internal/infrastructure/procurement/purchase_order_queue_notifier.go#L30)（インターフェース経由。どちらになるかは下の main.go で決まる） |
 
 `order.〜()`の4つは`PurchaseOrder`のメソッドなので、エディタで定義へジャンプすればそのまま
 [domain/procurement/purchase_order.go](../backend/internal/domain/procurement/purchase_order.go)に着く。
 「インターフェース経由」の4つは、ジャンプするとインターフェースの宣言
 （[repository.go:18](../backend/internal/domain/procurement/repository.go#L18)、[purchase_order_csv.go:26](../backend/internal/application/procurement/purchase_order_csv.go#L26)、[purchase_order_notifier.go:13](../backend/internal/application/procurement/purchase_order_notifier.go#L13)）で止まる。
-中身がどの構造体かは[main.go:99](../backend/cmd/api/main.go#L99)（リポジトリ）、[main.go:68](../backend/cmd/api/main.go#L68)（アップローダー）、[main.go:73](../backend/cmd/api/main.go#L73)（通知）で作られ、
-[main.go:108](../backend/cmd/api/main.go#L108)でユースケースに渡されているので、そこを見ると上の表の「実際に動くソース」に辿り着ける。
+中身がどの構造体かは[main.go:108](../backend/cmd/api/main.go#L108)（リポジトリ）、[main.go:70](../backend/cmd/api/main.go#L70)（アップローダー）、[main.go:74-82](../backend/cmd/api/main.go#L74-L82)（通知。SES版かSQS版かをここで選ぶ）で作られ、
+[main.go:117](../backend/cmd/api/main.go#L117)でユースケースに渡されているので、そこを見ると上の表の「実際に動くソース」に辿り着ける。
 
 ユースケースは`status`を直接書き換えず、必ず`order.Confirm()`を呼ぶ。`PurchaseOrder`のフィールドは小文字で
 `domain/procurement`パッケージの外から書き換えられないので、ユースケースから確定させる手段は`Confirm()`しかない。
